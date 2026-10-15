@@ -112,3 +112,27 @@ def render_html(result: dict) -> str:
         last = m.end()
     out.append(escape(answer[last:]))
     return f'<div class="why-answer">{"".join(out)}</div>'
+
+
+PLAIN_PROMPT = """Rewrite Oscar's technical note for a non-technical finance manager. Keep the meaning and the
+recommendation exactly; max 70 words; plain sentences in Oscar's first-person voice. Remove ids, clause numbers and
+jargon from the sentences; instead highlight the phrase each specific belongs to with [[phrase|tN]] and put the
+specifics (Stripe ids, amounts, clause numbers with their meaning) in `terms`. Example: "£170 was already
+[[refunded under my own authority|t1]]" -> t1: refund id, amount, the clause that allowed it. 1-4 terms."""
+
+
+def plainify(text: str, context: str = "") -> dict:
+    """Technical agent text -> {"answer": plain text with [[phrase|tN]], "terms": [...]} (same shape as why())."""
+    from .agent import claude
+    cited = sorted(set(re.findall(r"§(\d+\.\d+)", text)))
+    clause_ctx = "\n".join(f"§{c}: {clauses.text(c)}" for c in cited)
+    msg = claude().messages.create(
+        model=config.MODEL, max_tokens=3000, system=PLAIN_PROMPT,
+        output_config={"effort": "low", "format": {"type": "json_schema", "schema": SCHEMA}},
+        messages=[{"role": "user", "content": f"Context: {context}\nClauses referenced:\n{clause_ctx}\n\n"
+                                              f"Oscar's note:\n{text}"}])
+    out = next((b.text for b in msg.content if b.type == "text"), "")
+    try:
+        return json.loads(out) if msg.stop_reason != "refusal" else {"answer": text, "terms": []}
+    except ValueError:
+        return {"answer": text, "terms": []}

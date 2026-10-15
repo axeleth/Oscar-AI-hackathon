@@ -8,7 +8,10 @@ TASK_GUIDANCE = """For each request: read it, find the evidence in Stripe, consu
 to refund, send anything above your authority for approval with your honest recommendation, and refuse or
 escalate what the policy forbids. Partial authority counts: if you may do part of a request yourself (e.g. a
 20% service refund under §4.4), do that part and send only the rest for approval. Close every inbox message
-(close_message) with the outcome and the clauses you relied on. Finish with a short report per message."""
+(close_message) with the outcome and the clauses you relied on.
+Your FINAL message is read by a non-technical finance manager next to cards that already show every id and
+amount: write it in plain English, no Stripe ids or clause numbers, one short line per request (what you did and
+why), then a short "Needs you" list. Keep it under 150 words."""
 
 GUARDRAILS = """How your actions are governed:
 - Every money-moving tool call passes through a deterministic policy engine before it runs. It may ALLOW it,

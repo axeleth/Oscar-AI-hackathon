@@ -1,10 +1,51 @@
 <span hidden data-v="{{ v }}"></span>
 {% if current %}
 <h2 class="sticky">Run {{ current.id }} <span class="pill {{ current.status }}">{{ current.status | replace("_", " ") }}</span></h2>
-{% for t in current.transcript %}
-<div class="t {{ t.kind }} {% if t.verdict %}v-{{ t.verdict }}{% endif %}"><span class="k">{{ t.kind }}</span>{{ t.text }}</div>
-{% endfor %}
-{% if current.status == "running" %}<div class="t muted small">working…</div>{% endif %}
+<div class="chat">
+  {% for it in chat %}
+    {% if it.type == "user" %}
+      <div class="msg user"><div class="bubble">{{ it.text }}</div></div>
+    {% elif it.type == "oscar" %}
+      <div class="msg oscar"><div class="who">Oscar</div><div class="bubble md">{{ it.html | safe }}</div></div>
+    {% elif it.type == "activity" %}
+      <details class="activity" data-key="{{ it.key }}">
+        <summary><span class="dot"></span>{{ it.steps | length }} step{{ "s" if it.steps | length != 1 }} ·
+          <span class="muted">{{ it.steps[-1].label }}: {{ it.steps[-1].text[:110] }}{% if it.steps[-1].text | length > 110 %}…{% endif %}</span></summary>
+        {% for s in it.steps %}
+        <div class="step {{ s.kind }} {% if s.verdict %}v-{{ s.verdict }}{% endif %}"><span class="k">{{ s.label }}</span>{{ s.text }}</div>
+        {% endfor %}
+      </details>
+    {% elif it.type == "human" %}
+      <div class="msg human"><span>{{ it.text }}</span></div>
+    {% elif it.type == "alert" %}
+      <div class="msg alert"><b>Escalated to a human</b> · {{ it.text }}</div>
+    {% elif it.type == "final" %}
+      <div class="msg oscar final"><div class="who">Oscar · report</div><div class="bubble md">{{ it.html | safe }}</div></div>
+      {% if artifacts %}
+      <div class="artifacts">
+        {% for g in artifacts %}
+        <details class="artifact {{ g.outcome_class }}">
+          <summary><span class="pill {{ g.outcome_class }}">{{ g.outcome }}</span>
+            {% if g.override %}<span class="pill DENY">override</span>{% endif %}
+            <span class="atitle">{{ g.title }}</span></summary>
+          <div class="small">
+            <div><b>Decided by:</b> {{ g.who }}</div>
+            {% if g.recommendation %}<div><b>Oscar recommended:</b> {{ g.recommendation }}</div>{% endif %}
+            {% if g.rationale %}<div><b>Reason:</b> {{ g.rationale }}</div>{% endif %}
+            {% if g.stripe_id %}<div><b>Stripe:</b> <code>{{ g.stripe_id }}</code></div>{% endif %}
+            {% if g.rules %}<div><b>Rules:</b> <code>{{ g.rules | join(", ") }}</code></div>{% endif %}
+          </div>
+        </details>
+        {% endfor %}
+      </div>
+      {% endif %}
+    {% elif it.type == "error" %}
+      <div class="msg error"><b>Run stopped</b> · {{ it.text }}</div>
+    {% endif %}
+  {% endfor %}
+  {% if current.status == "running" %}<div class="msg oscar"><div class="bubble typing">Oscar is working<span>.</span><span>.</span><span>.</span></div></div>
+  {% elif current.status == "awaiting_approval" %}<div class="msg human"><span>Waiting for your decision in the approval queue →</span></div>{% endif %}
+</div>
 {% else %}
 <h2>Run</h2>
 <p class="muted">Start a task, or pick a run below.</p>

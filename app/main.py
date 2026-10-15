@@ -7,7 +7,7 @@ from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
-from . import agent, audit, audit_view, config, explain, policy
+from . import agent, audit, audit_view, chat_view, config, explain, policy
 from .tools import REGISTRY
 
 templates = Jinja2Templates(directory=str(config.ROOT / "app" / "templates"))
@@ -24,6 +24,7 @@ def _localtime(iso: str | None) -> str:
 
 
 templates.env.filters["localtime"] = _localtime
+templates.env.globals["render_terms"] = explain.render_html
 
 
 def _config_error() -> str | None:
@@ -55,6 +56,13 @@ def _ctx(request: Request, **kw) -> dict:
             "policy_version": version, "runs": runs, "model": config.MODEL, **kw}
 
 
+def _chat(run) -> dict:
+    if not run:
+        return {"chat": [], "artifacts": []}
+    return {"chat": chat_view.chat_items(run),
+            "artifacts": chat_view.artifacts(run.id) if run.status in ("done", "error") else []}
+
+
 def _run_version(run) -> str:
     return f"{run.status}:{len(run.transcript)}:{len(run.pending)}" if run else "none"
 
@@ -63,7 +71,8 @@ def _run_version(run) -> str:
 def index(request: Request, run: str | None = None, reads: int = 0):
     current = agent.RUNS.get(run) if run else None
     return templates.TemplateResponse(request, "index.html", _ctx(request, current=current, v=_run_version(current),
-                                                                  pending=agent.pending_approvals(), reads=reads))
+                                                                  pending=agent.pending_approvals(), reads=reads,
+                                                                  **_chat(current)))
 
 
 @app.post("/runs")
@@ -84,7 +93,7 @@ def run_partial(request: Request, run_id: str, v: str = ""):
     version = _run_version(run)
     if v == version:
         return Response(status_code=204)
-    return templates.TemplateResponse(request, "partials/run.html", _ctx(request, current=run, v=version))
+    return templates.TemplateResponse(request, "partials/run.html", _ctx(request, current=run, v=version, **_chat(run)))
 
 
 @app.get("/partials/runs", response_class=HTMLResponse)
@@ -96,7 +105,8 @@ def runs_partial(request: Request, current: str | None = None):
 @app.get("/partials/approvals", response_class=HTMLResponse)
 def approvals_partial(request: Request, v: str = ""):
     pending = agent.pending_approvals()
-    version = "|".join(f"{p.tool_use_id}:{p.state}:{p.ui_error}:{p.needs_override}" for _, p in pending) or "empty"
+    version = "|".join(f"{p.tool_use_id}:{p.state}:{p.ui_error}:{p.needs_override}:{bool(p.plain)}"
+                       for _, p in pending) or "empty"
     if v == version:
         return Response(status_code=204)
     return templates.TemplateResponse(request, "partials/approvals.html", _ctx(request, pending=pending, v=version))

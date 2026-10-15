@@ -12,7 +12,9 @@
 
   <div class="rec rec-{{ rec or 'none' }}">
     <b>Oscar recommends: {{ (rec or "no opinion given") | upper }}</b>
-    {% if p.args.rationale %}<div class="small">{{ p.args.rationale }}</div>{% endif %}
+    {% if p.plain %}{{ render_terms(p.plain) | safe }}
+    {% elif p.args.rationale %}<div class="small">{{ p.args.rationale }}</div>
+      <div class="muted small">simplifying…</div>{% endif %}
   </div>
   <details class="small"><summary class="muted">request details</summary><pre>{{ p.args | tojson(indent=2) }}</pre></details>
 

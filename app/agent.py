@@ -46,6 +46,7 @@ class Pending:
     timer: threading.Timer | None = None
     ui_error: str = ""                 # shown on the approval card after a refused decision
     needs_override: bool = False       # card shows the "I'm overriding" checkbox
+    plain: dict | None = None          # plain-English version of the rationale for the card (filled async)
 
     @property
     def recommendation(self) -> str | None:
@@ -207,6 +208,17 @@ def _maybe_resume(run: "Run", background: bool, resume: bool):
         _flush_results(run)
         run.status = "running"
         _spawn(run, background)
+
+
+def _plainify_card(p: Pending, task: str):
+    """Rewrite the agent's technical rationale in plain English (with detail popups) for the approval card."""
+    from . import explain
+    m = p.money
+    ctx = f"Held action: {p.tool}" + (f" {policy.fmt_money(m.amount, m.currency)} to {m.payee_label}" if m else "")
+    try:
+        p.plain = explain.plainify(p.args.get("rationale", ""), ctx)
+    except Exception:
+        p.plain = None  # card falls back to the raw rationale
 
 
 def _remember(run: "Run", outcome: str, tool: str, args: dict, money: Money | None, clauses: list[str] | None = None,
@@ -388,7 +400,8 @@ def _handle_tool_use(run: Run, tool_use_id: str, name: str, args: dict):
         _remember(run, "BLOCKED by policy", name, args, money, d.clauses, extra=d.summary())
         _result(run, tool_use_id, f"BLOCKED BY POLICY ({', '.join(d.rules)}): {d.summary()}", error=True)
     else:
-        run.pending[tool_use_id] = Pending(tool_use_id, name, args, money, d)
+        pending = run.pending[tool_use_id] = Pending(tool_use_id, name, args, money, d)
+        threading.Thread(target=_plainify_card, args=(pending, run.task), daemon=True).start()
         audit.log("approval_requested", "policy", run.id, tool=name, args=args, decision=d.verdict, rules=d.rules,
                   amount=m.amount, currency=m.currency, payee=m.payee, rationale=args.get("rationale"),
                   detail={"reasons": d.summary(), "clauses": d.clauses,
