@@ -1,4 +1,52 @@
-# Oscar – autonomous finance agent starter kit
+# Oscar AIccountant – an autonomous refunds & payments agent that explains every pound
+
+**Stripe × Briefcase AI Fintech Hackathon, London, 15 Oct 2026 · Track: Agents that spend · Side quest: Best use of Cognee memory**
+
+Oscar works through a company's finance inbox on Stripe (test mode). It refunds and pays **on its own** when the
+written policy allows, sends anything bigger to a human **with its own recommendation**, refuses fraud, and can
+explain every decision in plain English, citing the policy clause and the evidence. **Cognee** holds the policy as a
+knowledge graph and remembers every decision, so Oscar knows *which clause authorised each payment* and *what was
+decided before*.
+
+> Code enforces the rules. Cognee remembers them, and everything we've decided, so Oscar can explain every pound.
+
+## What judges should look at
+
+| Criterion | Where |
+|---|---|
+| **Money really moves** | Refunds/invoice settlement on Stripe test mode, each tagged with `run_id` + `approved_by` metadata |
+| **Autonomy with control** | `POLICY.md` (27 numbered clauses) mirrored by `policy.yaml`, enforced deterministically in `app/policy.py` *before* any money moves: £200 own authority, approval above, typed amount above £1,000, hard caps, payee allowlist, duplicate detection |
+| **Human-error safeguards** | Oscar must recommend approve/reject; overriding it needs a reason (both recorded); 5-second undo window; typed amount for large payments |
+| **Explains every pound** | Hash-chained, append-only audit log grouped per action; **Go!** on any action gives a plain-English answer with hover popups for ids/clauses; CSV export |
+| **Cognee memory** | `app/cognee_store.py`: POLICY.md → custom policy graph model (Clause → ActionType / Limit / Approver / Counterparty); `consult_policy` and `recall_precedents` query it; every decision is remembered and flashes in the dashboard; `/policy?tab=graph` shows the live graph |
+
+## Built before vs during the event (commit history is unedited)
+
+**Before 18:00 – starter template (commits 14:49–16:36):** generic agent loop (Claude tool use), Stripe test-mode
+tools, deterministic policy gate (ALLOW / DENY / NEEDS_APPROVAL), approval queue, hash-chained audit log, htmx UI,
+seed/reset/smoke scripts, approval safeguards (recommendation + override, undo, typed amount), grouped audit view.
+
+**Built at the hackathon (18:00–21:00, commits from 18:22):** the Spend-track product – written policy with numbered
+clauses and rule→clause mapping; refunds/payments inbox scenario; **Cognee policy knowledge graph + decision memory**
+(consult/recall tools, live memory feed, graph page); plain-English explanations with detail popups (**Go!**);
+chat-style run panel with artifact cards and follow-up messages; orphaned-approval handling; partial-authority
+refunds; demo inbox; branding and UI.
+
+## Run it
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+cp .env.example .env            # ANTHROPIC_API_KEY + STRIPE_SECRET_KEY (sk_test_...)
+.venv/bin/python scripts/seed_stripe.py
+.venv/bin/python scripts/cognee_ingest.py        # builds the Cognee policy graph (first run downloads a local embedding model)
+OSCAR_INBOX=scenarios/inbox_demo.json .venv/bin/uvicorn app.main:app   # http://localhost:8000
+```
+Then send: *"Work through the finance inbox. Handle every message according to policy."* See `DEMO_PROMPTS.md`.
+Reset for a fresh demo: `.venv/bin/python scripts/reset_stripe.py --audit && .venv/bin/python scripts/seed_stripe.py`.
+
+---
+
+# Starter kit notes
 
 Hackathon core for "let an AI agent move money safely": **autonomy, policy, auditability** on Stripe **test mode**.
 

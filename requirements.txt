@@ -9,3 +9,4 @@ python-dotenv>=1
 pytest>=8
 httpx>=0.27
 markdown>=3.5
+cognee[anthropic]==1.6.4
