@@ -37,8 +37,8 @@ def main():
         from app import cognee_store
         cognee_store.start(background=False)
         if cognee_store.ready():
-            cognee_store.reset_decisions()
-            print("cleared  Cognee decision memory (policy graph kept)")
+            cognee_store.reset_all()
+            print("rebuilt  Cognee memory from scratch (all decisions wiped, policy graph rebuilt from POLICY.md)")
 
 
 if __name__ == "__main__":

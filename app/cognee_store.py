@@ -209,3 +209,14 @@ def render_graph(which: str, timeout: float = 120) -> str | None:
                                       include_session_events=False)
     _run(render(), timeout)
     return str(path) if path.exists() else None
+
+
+def reset_all(timeout: float = 600):
+    """Wipe EVERYTHING in Cognee (policy graph + decisions) and rebuild the policy graph from POLICY.md."""
+    async def wipe_and_rebuild():
+        await _cognee.forget(everything=True)
+        if POLICY_MARK.exists():
+            POLICY_MARK.unlink()
+        return await _ingest_policy(force=True)
+    STATUS.update(state="building", detail="rebuilding policy knowledge graph from scratch")
+    STATUS.update(state="ready", detail=_run(wipe_and_rebuild(), timeout), decisions_stored=0)
