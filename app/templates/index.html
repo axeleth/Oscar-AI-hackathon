@@ -78,6 +78,9 @@
     .audit details[open] summary .title { white-space: normal; }
     .audit .steps { padding: 6px 4px 12px 24px; }
     .muted-pill { background: var(--code); color: var(--muted); }
+    .why { margin: 8px 0; } .why-answer { margin: 4px 0 10px; padding: 8px 10px; border-left: 3px solid var(--accent);
+      background: var(--code); border-radius: 6px; white-space: pre-wrap; }
+    .htmx-indicator { display: none; } .htmx-request .htmx-indicator, .htmx-request.htmx-indicator { display: inline; }
     @media (max-width: 700px) { .audit summary { grid-template-columns: 56px minmax(0, 1fr) auto; }
       .audit summary > :nth-child(2), .audit summary > :nth-child(5) { display: none; } }
   </style>
@@ -96,10 +99,14 @@
     // Expanded audit rows stay expanded when the log refreshes.
     document.addEventListener('htmx:beforeSwap', e => {
       e.detail.target._open = [...e.detail.target.querySelectorAll('details[open][data-key]')].map(d => d.dataset.key);
+      e.detail.target._why = Object.fromEntries([...e.detail.target.querySelectorAll('details[data-key]')]
+        .map(d => [d.dataset.key, d.querySelector('.why-out')?.innerHTML]).filter(([k, v]) => v));
     });
     document.addEventListener('htmx:afterSwap', e => {
       (e.detail.target._open || []).forEach(k => {
         const d = e.detail.target.querySelector(`details[data-key="${k}"]`); if (d) d.open = true; });
+      Object.entries(e.detail.target._why || {}).forEach(([k, html]) => {
+        const o = e.detail.target.querySelector(`details[data-key="${k}"] .why-out`); if (o) o.innerHTML = html; });
     });
     // Undo-window countdowns on approval cards.
     setInterval(() => document.querySelectorAll('[data-execute-at]').forEach(el => {
@@ -166,7 +173,8 @@
       <span class="muted">· <a href="/audit.csv">CSV (all)</a></span></h2>
     <div class="scroll keep-scroll">
       <div id="audit-body" hx-get="/partials/audit?reads={{ reads or 0 }}{% if current %}&run_id={{ current.id }}{% endif %}"
-           hx-trigger="load, every 2s" hx-swap="innerHTML" hx-vals='js:{v: ver("audit-body")}'>
+           hx-trigger="load, every 2s [!document.getElementById('audit-body').contains(document.activeElement)]"
+           hx-swap="innerHTML" hx-vals='js:{v: ver("audit-body")}'>
         <span class="muted">loading…</span>
       </div>
     </div>

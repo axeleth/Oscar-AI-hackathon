@@ -7,7 +7,7 @@ from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
-from . import agent, audit, audit_view, config, policy
+from . import agent, audit, audit_view, config, explain, policy
 from .tools import REGISTRY
 
 templates = Jinja2Templates(directory=str(config.ROOT / "app" / "templates"))
@@ -116,6 +116,16 @@ def decide(request: Request, run_id: str, tool_use_id: str, decision: str = Form
 def undo(request: Request, run_id: str, tool_use_id: str, approver: str = Form("human")):
     agent.undo_approval(run_id, tool_use_id, approver)
     return approvals_partial(request)
+
+
+@app.post("/why", response_class=HTMLResponse)
+def why(key: str = Form(...), question: str = Form("")):
+    try:
+        answer = explain.why(key, question)
+    except Exception as e:
+        answer = f"Explanation failed: {type(e).__name__}: {e}"
+    from html import escape
+    return HTMLResponse(f'<div class="why-answer">{escape(answer)}</div>')
 
 
 # ---- JSON / exports -------------------------------------------------------------
