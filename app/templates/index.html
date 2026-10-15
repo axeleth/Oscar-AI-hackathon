@@ -237,6 +237,8 @@
           <b>{{ fmt_money(policy.limits.daily_total, policy.currency) }}</b>/day.</div>
         <div>Unknown payees: <b>{{ policy.payees.unknown_payee }}</b> · allowlist: {{ policy.payees.allowlist | join(", ") }}</div>
         <div>Always need approval: {{ policy.approval.required_tools | join(", ") or "—" }}</div>
+        <div style="margin-top:6px"><a href="/policy" target="_blank">View full policy</a> ·
+          <a href="/policy?tab=graph" target="_blank">Cognee memory graph</a></div>
       </div>
     </section>
   </div>

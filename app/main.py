@@ -1,6 +1,7 @@
 """FastAPI app: task runner, approval queue, audit log. Run: uvicorn app.main:app --reload"""
 import csv
 import io
+import pathlib
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Form, Request
@@ -173,6 +174,34 @@ def run_json(run_id: str):
     return {"id": r.id, "task": r.task, "status": r.status, "final": r.final, "transcript": r.transcript,
             "pending": [{"tool_use_id": p.tool_use_id, "tool": p.tool, "args": p.args,
                          "reasons": p.decision.reasons} for p in r.pending.values()]}
+
+
+@app.get("/policy", response_class=HTMLResponse)
+def policy_page(request: Request, tab: str = "doc"):
+    from . import clauses
+    p, version = policy.load_policy()
+    return templates.TemplateResponse(request, "policy.html", {
+        "request": request, "tab": "graph" if tab in ("graph", "decisions") else "doc", "policy_version": version,
+        "doc_html": chat_view.md((config.ROOT / "POLICY.md").read_text()),
+        "rule_clauses": sorted((p.get("clauses") or {}).items(), key=lambda kv: [int(x) for x in kv[1].split(".")]),
+        "clause_text": clauses.text})
+
+
+@app.get("/policy/graph/{which}", response_class=HTMLResponse)
+def policy_graph(which: str):
+    from . import cognee_store
+    if which not in ("policy", "decisions"):
+        return HTMLResponse("unknown graph", status_code=404)
+    try:
+        path = cognee_store.render_graph(which)
+    except Exception as e:
+        path, err = None, f"{type(e).__name__}: {e}"
+    else:
+        err = "Cognee memory is not ready yet" if path is None else ""
+    if not path:
+        from html import escape
+        return HTMLResponse(f"<p style='font-family:sans-serif;padding:20px'>Graph unavailable: {escape(err)}</p>")
+    return HTMLResponse(pathlib.Path(path).read_text())
 
 
 @app.get("/api/memory")

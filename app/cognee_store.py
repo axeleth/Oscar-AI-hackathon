@@ -188,3 +188,17 @@ def reset_decisions(timeout: float = 120):
             pass  # nothing stored yet
     _run(wipe(), timeout)
     STATUS["decisions_stored"] = 0
+
+
+def render_graph(which: str, timeout: float = 120) -> str | None:
+    """Render a Cognee dataset ('policy' or 'decisions') to a self-contained interactive HTML file; returns the path."""
+    if not ready():
+        return None
+    dataset = POLICY_DATASET if which == "policy" else DECISIONS_DATASET
+    path = STORE_DIR / f"graph_{which}.html"
+
+    async def render():
+        await _cognee.visualize_graph(destination_file_path=str(path), dataset=dataset, full=True,
+                                      include_session_events=False)
+    _run(render(), timeout)
+    return str(path) if path.exists() else None
