@@ -38,3 +38,23 @@ require_rationale: true           # money tools must explain themselves (min 15 
 
 blocked_tools: []                 # e.g. [create_payout] to remove a capability entirely
 enabled_tools: []                 # empty = all registered tools; otherwise only these are exposed to the agent
+
+# Which POLICY.md clause each enforced rule implements (cited in decisions, cards and the audit log)
+clauses:
+  currency_mismatch: "1.2"
+  non_positive_amount: "4.3"
+  over_hard_limit: "2.4"
+  daily_limit: "2.5"
+  over_approval_threshold: "2.2"
+  unknown_payee: "3.2"
+  possible_duplicate: "7.1"
+  missing_rationale: "8.1"
+  autonomy_suggest_only: "2.2"
+  tool_requires_approval: "2.2"
+  tool_blocked: "1.1"
+  tool_not_enabled: "1.1"
+  amount_unknown: "2.2"
+tool_clauses:                     # extra clause for tools that always need approval
+  submit_dispute_evidence: "5.1"
+  void_invoice: "6.2"
+  create_payout: "2.2"

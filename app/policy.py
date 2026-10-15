@@ -21,6 +21,7 @@ class Decision:
     rules: list[str] = field(default_factory=list)      # rule ids that fired
     reasons: list[str] = field(default_factory=list)    # human-readable explanations
     policy_version: str = ""
+    clauses: list[str] = field(default_factory=list)    # POLICY.md clause ids behind the rules that fired
 
     def summary(self) -> str:
         return "; ".join(self.reasons) or "within policy"
@@ -102,4 +103,14 @@ def evaluate(t: Tool, args: dict, money: Money | None) -> Decision:
 
     fired = deny + approve
     verdict = DENY if deny else NEEDS_APPROVAL if approve else ALLOW
-    return Decision(verdict, [r for r, _ in fired], [m for _, m in fired], version)
+    rule_clause = p.get("clauses") or {}
+    tool_clause = (p.get("tool_clauses") or {}).get(t.name)
+    reasons, cited = [], []
+    for r, m in fired:
+        c = tool_clause if r == "tool_requires_approval" and tool_clause else rule_clause.get(r)
+        reasons.append(f"§{c} {m}" if c else m)
+        if c and c not in cited:
+            cited.append(c)
+    if verdict == ALLOW and t.money:
+        cited.append("2.1")  # auto-execution authority
+    return Decision(verdict, [r for r, _ in fired], reasons, version, cited)

@@ -92,12 +92,19 @@ def headline_groups(rows: list[dict], show_reads: bool = False, limit: int = 80)
             e["event"] in ("tool_executed", "tool_failed") for e in ev) and money_ev is None
         if is_read and not show_reads:
             continue
-        is_agent_tool = tool in ("escalate_to_human", "record_finding")
+        is_agent_tool = tool in ("escalate_to_human", "record_finding", "close_message", "consult_policy",
+                                 "recall_precedents")
 
         if tool == "escalate_to_human":
             title = f"Escalation [{args.get('severity', '?')}]: {args.get('summary', '')}"
         elif tool == "record_finding":
             title = f"Finding: {args.get('title', '')}"
+        elif tool == "close_message":
+            title = f"Inbox {args.get('message_id')} → {args.get('outcome')}: {args.get('summary', '')}"
+        elif tool == "consult_policy":
+            title = f"Consulted policy: {args.get('question', '')}"
+        elif tool == "recall_precedents":
+            title = f"Recalled precedents: {args.get('query', '')}"
         elif money_ev:
             title = (f"{LABELS.get(tool, tool)} {fmt_money(money_ev['amount'], money_ev['currency'])}"
                      f" → {money_ev.get('payee') or '?'}")

@@ -169,8 +169,8 @@ def test_agreeing_with_recommendation_needs_no_override():
 def test_big_amount_requires_typed_confirmation():
     run = agent.manual_run("t")
     tid = agent.propose(run, "fake_pay", pay(250000))                   # £2,500 > confirm_above £1,000
-    assert "Type the exact amount" in agent.resolve_approval(run.id, tid, True, "t", "", delay=0, resume=False)
-    assert "Type the exact amount" in agent.resolve_approval(run.id, tid, True, "t", "", typed_amount="250",
+    assert "type the exact amount" in agent.resolve_approval(run.id, tid, True, "t", "", delay=0, resume=False)
+    assert "type the exact amount" in agent.resolve_approval(run.id, tid, True, "t", "", typed_amount="250",
                                                                delay=0, resume=False)
     assert agent.resolve_approval(run.id, tid, True, "t", "", typed_amount="£2,500.00", delay=0, resume=False) is None
     assert len(EXECUTED) == 1

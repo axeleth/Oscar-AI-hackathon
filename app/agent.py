@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 import anthropic
 import stripe
 
-from . import audit, config, policy
+from . import audit, config, memory, policy
 from .prompts import SYSTEM_PROMPT
 from .tools import REGISTRY, Ctx, Money, missing_required, tool_schemas
 
@@ -98,12 +98,12 @@ def check_decision(p: Pending, approve: bool, comment: str, typed_amount: str = 
     p.needs_override = rec in ("approve", "reject") and (rec == "approve") != approve
     if p.needs_override and (not confirm_override or len(comment.strip()) < 10):
         return (f"Oscar recommended {rec.upper()}: {p.args.get('rationale', '')} - you're deciding the opposite. "
-                f"Tick 'I'm overriding' and give your reason (10+ characters).")
+                f"Per §8.2, tick 'I'm overriding' and give your reason (10+ characters).")
     confirm_above = (policy.load_policy()[0].get("approval") or {}).get("confirm_above")
     m = p.money
     if approve and m and m.amount is not None and confirm_above is not None and m.amount > confirm_above:
         if not _amount_matches(typed_amount, m.amount):
-            return f"Type the exact amount ({policy.fmt_money(m.amount, m.currency)}) to approve this."
+            return f"§2.3: type the exact amount ({policy.fmt_money(m.amount, m.currency)}) to approve this."
     return None
 
 
@@ -136,6 +136,8 @@ def resolve_approval(run_id: str, tool_use_id: str, approve: bool, approver: str
                                                    "agent_reason": p.args.get("rationale")}, **common)
         verb = "APPROVED" if approve else "REJECTED"
         flag = f" (overriding Oscar's '{p.recommendation}')" if p.override else ""
+        _remember(run, verb + (" (OVERRIDE of Oscar)" if p.override else ""), p.tool, p.args, p.money,
+                  p.decision.clauses, who=p.approver, reason=p.comment)
         run.note("human", f"{p.approver} {verb} {p.tool}{flag}" + (f": {p.comment}" if p.comment else ""))
 
         if not approve:
@@ -176,6 +178,7 @@ def undo_approval(run_id: str, tool_use_id: str, who: str = "human") -> bool:
                   amount=m.amount, currency=m.currency, payee=m.payee, detail={"by": who.strip() or "human"},
                   policy_version=p.decision.policy_version, action_id=tool_use_id)
         run.note("human", f"{who.strip() or 'human'} UNDID the approval of {p.tool}; it is back in the queue.")
+        _remember(run, "APPROVAL UNDONE", p.tool, p.args, p.money, p.decision.clauses, who=who.strip() or "human")
         p.state, p.execute_at, p.timer, p.override, p.needs_override = "awaiting", None, None, False, False
         return True
 
@@ -204,6 +207,29 @@ def _maybe_resume(run: "Run", background: bool, resume: bool):
         _flush_results(run)
         run.status = "running"
         _spawn(run, background)
+
+
+def _remember(run: "Run", outcome: str, tool: str, args: dict, money: Money | None, clauses: list[str] | None = None,
+              who: str = "", reason: str = "", extra: str = ""):
+    """Write a decision into memory so later runs (and 'why?' questions) can recall it as precedent."""
+    m = money or Money(None, None, None)
+    what = f"{tool} {policy.fmt_money(m.amount, m.currency)} to {m.payee_label or m.payee}" if money else tool
+    parts = [f"{datetime.now(timezone.utc):%Y-%m-%d %H:%M} UTC", f"{outcome}{' by ' + who if who else ''}", what]
+    if args.get("recommendation"):
+        parts.append(f"Oscar recommended {args['recommendation']}: {args.get('rationale', '')}")
+    elif args.get("rationale"):
+        parts.append(f"Oscar's rationale: {args['rationale']}")
+    if reason:
+        parts.append(f"human reason: {reason}")
+    if clauses:
+        parts.append("clauses " + " ".join(f"§{c}" for c in clauses))
+    if extra:
+        parts.append(extra)
+    parts.append(f"run {run.id}")
+    try:
+        memory.remember(" · ".join(parts), kind="decision", run_id=run.id, payee=m.payee, outcome=outcome)
+    except Exception as e:  # memory must never break the money path
+        run.note("system", f"memory write failed: {e}")
 
 
 def _amount_matches(typed: str, amount: int) -> bool:
@@ -327,7 +353,8 @@ def _handle_tool_use(run: Run, tool_use_id: str, name: str, args: dict):
     m = money or Money(None, None, None)
     audit.log("policy_decision", "policy", run.id, tool=name, args=args, decision=d.verdict, rules=d.rules,
               rationale=args.get("rationale"), amount=m.amount, currency=m.currency, payee=m.payee,
-              detail=d.summary(), policy_version=d.policy_version, action_id=tool_use_id)
+              detail={"reasons": d.summary(), "clauses": d.clauses}, policy_version=d.policy_version,
+              action_id=tool_use_id)
     amount_txt = f" {policy.fmt_money(m.amount, m.currency)} to {m.payee_label or m.payee}" if money else ""
     if not (t.category == "read" and d.verdict == policy.ALLOW):  # reads are audited but not shown
         run.note("policy", f"{d.verdict}: {name}{amount_txt} - {d.summary()}", verdict=d.verdict, tool=name)
@@ -335,12 +362,14 @@ def _handle_tool_use(run: Run, tool_use_id: str, name: str, args: dict):
     if d.verdict == policy.ALLOW:
         _execute(run, tool_use_id, name, args, money)
     elif d.verdict == policy.DENY:
+        _remember(run, "BLOCKED by policy", name, args, money, d.clauses, extra=d.summary())
         _result(run, tool_use_id, f"BLOCKED BY POLICY ({', '.join(d.rules)}): {d.summary()}", error=True)
     else:
         run.pending[tool_use_id] = Pending(tool_use_id, name, args, money, d)
         audit.log("approval_requested", "policy", run.id, tool=name, args=args, decision=d.verdict, rules=d.rules,
                   amount=m.amount, currency=m.currency, payee=m.payee, rationale=args.get("rationale"),
-                  detail={"reasons": d.summary(), "agent_recommendation": args.get("recommendation")},
+                  detail={"reasons": d.summary(), "clauses": d.clauses,
+                          "agent_recommendation": args.get("recommendation")},
                   policy_version=d.policy_version, action_id=tool_use_id)
 
 
@@ -367,10 +396,18 @@ def _execute(run: Run, tool_use_id: str, name: str, args: dict, money: Money | N
                   payee=m.payee if t.money else None, stripe_id=stripe_id,
                   detail={"result": out, "approved_by": approved_by or ("policy:auto" if t.money else None)},
                   action_id=tool_use_id)
+        if t.money or "recommendation" in t.input_schema["properties"]:
+            _remember(run, "EXECUTED", name, args, money, extra=f"stripe {stripe_id}" if stripe_id else "",
+                      who=approved_by or "policy:auto")
         if name == "escalate_to_human":
             run.note("escalation", f"[{args.get('severity')}] {args.get('summary')}", tool=name)
         elif name == "record_finding":
             run.note("finding", f"{args.get('title')}: {args.get('detail')}", tool=name)
+        elif name == "close_message":
+            run.note("inbox", f"{args.get('message_id')} → {args.get('outcome')}: {args.get('summary')}", tool=name)
+        elif name in ("consult_policy", "recall_precedents"):
+            run.note("memory", f"{name}: {args.get('question') or args.get('query')}\n→ {str(out.get('answer', ''))[:400]}",
+                     tool=name)
         else:
             run.note("tool", f"{name} executed" + (f" -> {stripe_id}" if stripe_id else ""), tool=name)
     else:
