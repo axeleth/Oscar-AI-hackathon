@@ -168,8 +168,6 @@ def consult(question: str, timeout: float = 60) -> str:
 
 def recall(query: str, timeout: float = 60) -> str:
     from cognee import SearchType
-    if not STATUS["decisions_stored"]:
-        return ""
     return _texts(_run(_cognee.recall(query, query_type=SearchType.GRAPH_COMPLETION,
                                       datasets=[DECISIONS_DATASET], system_prompt=PRECEDENT_PROMPT), timeout))
 
