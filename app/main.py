@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from . import agent, audit, audit_view, chat_view, config, explain, memory, policy
@@ -49,6 +50,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Oscar", lifespan=lifespan)
+app.mount("/logo", StaticFiles(directory=str(config.ROOT / "outputs" / "logo")), name="logo")
 
 
 def _ctx(request: Request, **kw) -> dict:

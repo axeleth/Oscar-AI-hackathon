@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Oscar</title>
+  <link rel="icon" href="/logo/favicon.ico">
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
   <style>
     :root {
@@ -21,9 +22,10 @@
     * { box-sizing: border-box; }
     body { margin: 0; background: var(--bg); color: var(--text);
            font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; }
-    header { display: flex; align-items: baseline; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--border);
+    header { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--border);
              background: var(--panel); flex-wrap: wrap; }
     header h1 { margin: 0; font-size: 18px; }
+    header .logo { width: 36px; height: 36px; border-radius: 8px; align-self: center; }
     header .meta { color: var(--muted); font-size: 12px; }
     .banner { background: var(--deny-bg); color: var(--deny); padding: 10px 20px; font-weight: 600; }
     main { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 16px; padding: 16px 20px; }
@@ -186,6 +188,7 @@
 </head>
 <body>
 <header>
+  <img class="logo" src="/logo/oscar-96.png" alt="" width="36" height="36" onerror="this.remove()">
   <h1>Oscar</h1>
   <span class="meta">autonomous finance agent · Stripe TEST mode · model {{ model }} · policy v{{ policy_version }}
     · autonomy <b>{{ policy.autonomy }}</b></span>
