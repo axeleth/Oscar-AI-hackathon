@@ -14,6 +14,18 @@ templates = Jinja2Templates(directory=str(config.ROOT / "app" / "templates"))
 templates.env.globals["fmt_money"] = policy.fmt_money
 
 
+def _localtime(iso: str | None) -> str:
+    """Audit timestamps are stored in UTC; show them in the machine's local time."""
+    from datetime import datetime
+    try:
+        return datetime.fromisoformat(iso).astimezone().strftime("%H:%M:%S")
+    except (TypeError, ValueError):
+        return ""
+
+
+templates.env.filters["localtime"] = _localtime
+
+
 def _config_error() -> str | None:
     try:
         config.assert_test_mode()

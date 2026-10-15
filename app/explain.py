@@ -1,6 +1,7 @@
 """'Why did you pay this?' - answers from the audit trail, the cited policy clauses and decision memory."""
 import json
 import re
+from datetime import datetime
 from html import escape
 
 from . import audit, audit_view, clauses, config, memory
@@ -49,7 +50,7 @@ def _evidence(group: dict) -> str:
             d = {"note": e.get("detail")}
         cited += [c for c in (d.get("clauses") or []) if c not in cited]
         d.pop("result", None)
-        steps.append({"time": e["ts"][:19], "actor": e["actor"], "step": e["event"], "decision": e.get("decision"),
+        steps.append({"time": datetime.fromisoformat(e["ts"]).astimezone().strftime("%Y-%m-%d %H:%M:%S %Z"), "actor": e["actor"], "step": e["event"], "decision": e.get("decision"),
                       "rules": e.get("rules_list") or None, "reason_or_comment": e.get("rationale"),
                       "stripe_id": e.get("stripe_id"), "detail": d})
     payee = next((e.get("payee") for e in group["events"] if e.get("payee")), None)

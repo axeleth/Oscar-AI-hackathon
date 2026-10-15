@@ -10,7 +10,7 @@
   {% for g in groups %}
   <details data-key="{{ g.key }}">
     <summary>
-      <span class="muted">{{ g.ts[11:19] }}</span>
+      <span class="muted">{{ g.ts | localtime }}</span>
       <code class="muted">{{ g.run_id or "" }}</code>
       <span class="title">{{ g.title }}</span>
       <span>{% if g.outcome %}<span class="pill {{ g.outcome_class }}">{{ g.outcome }}</span>{% endif %}
@@ -33,7 +33,7 @@
         <tbody>
         {% for e in g.events %}
         <tr>
-          <td class="muted">{{ e.id }}</td><td class="muted">{{ e.ts[11:19] }}</td><td>{{ e.actor }}</td>
+          <td class="muted">{{ e.id }}</td><td class="muted">{{ e.ts | localtime }}</td><td>{{ e.actor }}</td>
           <td>{{ e.event | replace("_", " ") }}</td>
           <td>{% if e.decision %}<span class="pill {{ e.decision }}">{{ e.decision }}</span>{% endif %}</td>
           <td>{% if e.rules_list %}<code>{{ e.rules_list | join(", ") }}</code><br>{% endif %}<span class="muted">{{ e.detail_text }}</span></td>
