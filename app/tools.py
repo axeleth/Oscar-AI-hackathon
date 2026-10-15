@@ -54,13 +54,26 @@ RATIONALE_PROP = {
 }
 
 
+RECOMMENDATION_PROP = {
+    "type": "string", "enum": ["approve", "reject", "unsure"],
+    "description": "Your own opinion, shown to the human if policy holds this for approval: would YOU approve it? "
+                   "It is fine to submit a request you recommend rejecting (e.g. a customer request that breaks "
+                   "policy) so a human makes the call - say why in rationale.",
+}
+
+
 def tool(name: str, description: str, properties: dict | None = None, required: list[str] | None = None,
-         money: bool = False, resolve: Callable[[dict], Money] | None = None, category: str | None = None):
+         money: bool = False, resolve: Callable[[dict], Money] | None = None, category: str | None = None,
+         opinion: bool = False):
+    """money=True: moves money (needs resolve). opinion=True: consequential, so the agent must justify it and
+    give its own recommendation (money tools always do)."""
     properties = dict(properties or {})
     required = list(required or [])
-    if money:
+    if money or opinion:
         properties["rationale"] = RATIONALE_PROP
-        required.append("rationale")
+        properties["recommendation"] = RECOMMENDATION_PROP
+        required += ["rationale", "recommendation"]
+    if money:
         if resolve is None:
             raise ValueError(f"money tool {name} needs a resolve() function")
 
@@ -270,7 +283,7 @@ def send_invoice(args, ctx):
 
 
 @tool("void_invoice", "Void an open invoice (it will no longer be payable).",
-      {"invoice_id": {"type": "string"}, "rationale": RATIONALE_PROP}, ["invoice_id", "rationale"], category="write")
+      {"invoice_id": {"type": "string"}}, ["invoice_id"], category="write", opinion=True)
 def void_invoice(args, ctx):
     return slim(sc().v1.invoices.void_invoice(args["invoice_id"], options=_opts(ctx)), INVOICE_KEYS)
 
@@ -278,8 +291,8 @@ def void_invoice(args, ctx):
 @tool("submit_dispute_evidence",
       "Attach evidence text to a dispute and optionally submit it to the bank (submission is final).",
       {"dispute_id": {"type": "string"}, "evidence_text": {"type": "string"},
-       "submit": {"type": "boolean", "default": False}, "rationale": RATIONALE_PROP},
-      ["dispute_id", "evidence_text", "rationale"], category="write")
+       "submit": {"type": "boolean", "default": False}},
+      ["dispute_id", "evidence_text"], category="write", opinion=True)
 def submit_dispute_evidence(args, ctx):
     d = sc().v1.disputes.update(args["dispute_id"], params={
         "evidence": {"uncategorized_text": args["evidence_text"]}, "submit": bool(args.get("submit"))},

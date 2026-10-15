@@ -1,5 +1,6 @@
 """Offline tests: policy engine, audit chain, and the agent gate with a fake money tool (no Stripe, no Claude)."""
 import sqlite3
+import time
 
 import pytest
 
@@ -10,7 +11,7 @@ POLICY = """
 currency: gbp
 autonomy: threshold
 limits: {max_per_transaction: 500000, daily_total: 1000000}
-approval: {threshold: 20000, required_tools: [fake_sensitive]}
+approval: {threshold: 20000, required_tools: [fake_sensitive], confirm_above: 100000}
 payees: {allowlist: [good@test], unknown_payee: needs_approval}
 duplicates: {window_minutes: 60}
 require_rationale: true
@@ -52,8 +53,8 @@ def isolated(tmp_path, monkeypatch):
     yield p
 
 
-def pay(amount, payee="good@test", rationale="paying the agreed invoice INV-1 per contract", **kw):
-    return {"amount": amount, "payee": payee, "rationale": rationale, **kw}
+def pay(amount, payee="good@test", rationale="paying the agreed invoice INV-1 per contract", rec="unsure", **kw):
+    return {"amount": amount, "payee": payee, "rationale": rationale, "recommendation": rec, **kw}
 
 
 def ev(args, name="fake_pay"):
@@ -134,3 +135,68 @@ def test_audit_chain_detects_tampering():
     conn.close()
     ok, _, bad = audit.verify_chain()
     assert not ok and bad == 2
+
+
+def test_money_tools_require_recommendation():
+    run = agent.manual_run("t")
+    args = pay(5000)
+    del args["recommendation"]
+    tid = agent.propose(run, "fake_pay", args)
+    assert run.results[tid]["is_error"] and "recommendation" in run.results[tid]["content"] and not EXECUTED
+
+
+def test_override_needs_confirmation_and_reason():
+    run = agent.manual_run("t")
+    tid = agent.propose(run, "fake_pay", pay(30000, rec="reject"))      # held: over threshold
+    err = agent.resolve_approval(run.id, tid, True, "tester", "ok", delay=0, resume=False)
+    assert err and "Oscar recommended REJECT" in err and not EXECUTED and run.pending[tid].needs_override
+    err = agent.resolve_approval(run.id, tid, True, "tester", "Customer is a key account, approving anyway",
+                                 confirm_override=True, delay=0, resume=False)
+    assert err is None and len(EXECUTED) == 1
+    assert "against your recommendation" in run.results[tid]["content"]
+    rows = audit.query(run.id)
+    assert any(r["event"] == "recommendation_override" for r in rows)
+    assert all(r["action_id"] == tid for r in rows if r["event"] != "run_started")
+
+
+def test_agreeing_with_recommendation_needs_no_override():
+    run = agent.manual_run("t")
+    tid = agent.propose(run, "fake_pay", pay(30000, rec="reject"))
+    assert agent.resolve_approval(run.id, tid, False, "tester", "", resume=False) is None
+    assert run.results[tid]["is_error"] and not EXECUTED
+
+
+def test_big_amount_requires_typed_confirmation():
+    run = agent.manual_run("t")
+    tid = agent.propose(run, "fake_pay", pay(250000))                   # £2,500 > confirm_above £1,000
+    assert "Type the exact amount" in agent.resolve_approval(run.id, tid, True, "t", "", delay=0, resume=False)
+    assert "Type the exact amount" in agent.resolve_approval(run.id, tid, True, "t", "", typed_amount="250",
+                                                               delay=0, resume=False)
+    assert agent.resolve_approval(run.id, tid, True, "t", "", typed_amount="£2,500.00", delay=0, resume=False) is None
+    assert len(EXECUTED) == 1
+
+
+def test_undo_window():
+    run = agent.manual_run("t")
+    tid = agent.propose(run, "fake_pay", pay(30000))
+    agent.resolve_approval(run.id, tid, True, "tester", "oops", delay=0.3, resume=False)
+    assert run.pending[tid].state == "scheduled" and not EXECUTED
+    assert agent.undo_approval(run.id, tid, "tester")
+    time.sleep(0.5)
+    assert run.pending[tid].state == "awaiting" and not EXECUTED      # undone: never executed
+    agent.resolve_approval(run.id, tid, True, "tester", "really", delay=0.1, resume=False)
+    time.sleep(0.4)
+    assert tid not in run.pending and len(EXECUTED) == 1
+    assert any(r["event"] == "approval_undone" for r in audit.query(run.id))
+
+
+def test_audit_headline_groups():
+    from app import audit_view
+    run = agent.manual_run("t")
+    agent.propose(run, "fake_pay", pay(5000))
+    agent.propose(run, "fake_pay", pay(600000))
+    groups = audit_view.headline_groups(audit.query(run.id))
+    outcomes = sorted(g["outcome"] for g in groups)
+    assert outcomes == ["BLOCKED", "EXECUTED", "STARTED"]
+    executed = next(g for g in groups if g["outcome"] == "EXECUTED")
+    assert executed["title"].startswith("fake_pay £50.00") and len(executed["events"]) == 3

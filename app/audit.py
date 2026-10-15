@@ -40,6 +40,9 @@ CREATE INDEX IF NOT EXISTS idx_events_run ON events(run_id);
 
 FIELDS = ["ts", "run_id", "actor", "event", "tool", "args", "decision", "rules", "rationale",
           "amount", "currency", "payee", "stripe_id", "detail", "policy_version"]
+# Added later; hashed only when set, so rows written before it existed still verify.
+OPTIONAL_FIELDS = ["action_id"]       # groups every event of one tool call (= its tool_use_id)
+ALL_FIELDS = FIELDS + OPTIONAL_FIELDS
 
 
 def _connect() -> sqlite3.Connection:
@@ -48,11 +51,17 @@ def _connect() -> sqlite3.Connection:
     conn = sqlite3.connect(path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(events)")}
+    for f in OPTIONAL_FIELDS:
+        if f not in cols:
+            conn.execute(f"ALTER TABLE events ADD COLUMN {f} TEXT")
     return conn
 
 
 def _row_hash(prev_hash: str, row: dict) -> str:
-    payload = json.dumps({k: row.get(k) for k in FIELDS}, sort_keys=True, default=str)
+    data = {k: row.get(k) for k in FIELDS}
+    data.update({k: row[k] for k in OPTIONAL_FIELDS if row.get(k) is not None})
+    payload = json.dumps(data, sort_keys=True, default=str)
     return hashlib.sha256((prev_hash + payload).encode()).hexdigest()
 
 
@@ -63,9 +72,9 @@ def _dump(v):
 
 
 def log(event: str, actor: str, run_id: str | None = None, **kw) -> dict:
-    """Append one event. kw may contain any FIELDS; dict/list values are JSON-encoded."""
-    row = {k: None for k in FIELDS}
-    row.update({k: (_dump(v) if k in ("args", "rules", "detail") else v) for k, v in kw.items() if k in FIELDS})
+    """Append one event. kw may contain any of ALL_FIELDS; dict/list values are JSON-encoded."""
+    row = {k: None for k in ALL_FIELDS}
+    row.update({k: (_dump(v) if k in ("args", "rules", "detail") else v) for k, v in kw.items() if k in ALL_FIELDS})
     row.update(event=event, actor=actor, run_id=run_id, ts=datetime.now(timezone.utc).isoformat())
     with _lock:
         conn = _connect()
@@ -74,7 +83,7 @@ def log(event: str, actor: str, run_id: str | None = None, **kw) -> dict:
             prev = last["hash"] if last else "GENESIS"
             row["prev_hash"] = prev
             row["hash"] = _row_hash(prev, row)
-            cols = FIELDS + ["prev_hash", "hash"]
+            cols = ALL_FIELDS + ["prev_hash", "hash"]
             conn.execute(f"INSERT INTO events ({','.join(cols)}) VALUES ({','.join('?' * len(cols))})",
                          [row[c] for c in cols])
             conn.commit()

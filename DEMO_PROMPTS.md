@@ -45,8 +45,9 @@ Handle both according to policy and tell me what happened to each.
 
 **What you should see**
 
-- Globex: `NEEDS_APPROVAL: pay_invoice £650.00`, because it's above the £200 auto-approve threshold. Click **Approve**, comment "Bank transfer confirmed on statement".
-- Shady Holdings: `NEEDS_APPROVAL: create_refund £3,000.00`, because the payee isn't on the allowlist and the amount is above the threshold. Click **Reject**, comment "Not an approved payee, refund policy is 14 days".
+- Globex: `NEEDS_APPROVAL: pay_invoice £650.00`, because it's above the £200 auto-approve threshold. Click **Approve**, comment "Bank transfer confirmed on statement". It runs after a 10-second **Undo** window.
+- Shady Holdings: `NEEDS_APPROVAL: create_refund £3,000.00`, because the payee isn't on the allowlist and the amount is above the threshold. The card shows **Oscar recommends: REJECT** with its reason. Click **Reject**, comment "Not an approved payee, refund policy is 14 days".
+- Optional, to show the human-error safeguards: click **Approve** on the Shady card instead. It refuses until you tick "I'm overriding Oscar's recommendation", give a reason, and type the amount (over £1,000). Then click **Undo** during the 10-second window, and it goes back to the queue.
 - The run pauses until both cards are decided, then resumes and reports each outcome.
 
 **Check in Stripe:** Invoices, then the Globex £650.00 invoice shows Paid. The Shady £3,000.00 payment is unchanged: the rejected refund never reached Stripe.

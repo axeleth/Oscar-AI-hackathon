@@ -15,6 +15,8 @@ limits:
 
 approval:
   threshold: 20000                # £200 - above this needs a human (in 'threshold' mode)
+  undo_seconds: 10                # approved actions wait this long (with an Undo button) before executing
+  confirm_above: 100000           # £1,000 - approving more than this requires typing the amount
   required_tools:                 # always need a human, whatever the amount
     - submit_dispute_evidence
     - void_invoice

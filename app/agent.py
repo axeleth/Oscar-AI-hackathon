@@ -7,6 +7,7 @@ A paused run resumes (in a new thread) once every pending call in that turn has 
 Runs live in memory; the audit log in SQLite is the durable record.
 """
 import json
+import re
 import threading
 import uuid
 from dataclasses import dataclass, field
@@ -37,6 +38,18 @@ class Pending:
     money: Money | None
     decision: policy.Decision
     created: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    state: str = "awaiting"            # awaiting | scheduled (approved, inside the undo window)
+    execute_at: float | None = None    # epoch seconds when a scheduled approval executes
+    approver: str = ""
+    comment: str = ""
+    override: bool = False             # human decided against the agent's recommendation
+    timer: threading.Timer | None = None
+    ui_error: str = ""                 # shown on the approval card after a refused decision
+    needs_override: bool = False       # card shows the "I'm overriding" checkbox
+
+    @property
+    def recommendation(self) -> str | None:
+        return self.args.get("recommendation")
 
 
 @dataclass
@@ -78,30 +91,127 @@ def pending_approvals() -> list[tuple[Run, Pending]]:
     return [(r, p) for r in RUNS.values() for p in r.pending.values()]
 
 
+def check_decision(p: Pending, approve: bool, comment: str, typed_amount: str = "",
+                   confirm_override: bool = False) -> str | None:
+    """Human-error safeguards. Returns an error to show on the card, or None if the decision may proceed."""
+    rec = p.recommendation
+    p.needs_override = rec in ("approve", "reject") and (rec == "approve") != approve
+    if p.needs_override and (not confirm_override or len(comment.strip()) < 10):
+        return (f"Oscar recommended {rec.upper()}: {p.args.get('rationale', '')} - you're deciding the opposite. "
+                f"Tick 'I'm overriding' and give your reason (10+ characters).")
+    confirm_above = (policy.load_policy()[0].get("approval") or {}).get("confirm_above")
+    m = p.money
+    if approve and m and m.amount is not None and confirm_above is not None and m.amount > confirm_above:
+        if not _amount_matches(typed_amount, m.amount):
+            return f"Type the exact amount ({policy.fmt_money(m.amount, m.currency)}) to approve this."
+    return None
+
+
 def resolve_approval(run_id: str, tool_use_id: str, approve: bool, approver: str, comment: str = "",
-                     background: bool = True, resume: bool = True) -> None:
+                     typed_amount: str = "", confirm_override: bool = False, delay: float | None = None,
+                     background: bool = True, resume: bool = True) -> str | None:
+    """Apply a human decision. Returns an error message (and changes nothing) if a safeguard refuses it.
+    Approvals wait `approval.undo_seconds` (or `delay`) before executing; undo_approval() cancels them."""
     run = RUNS[run_id]
     with run.lock:
-        p = run.pending.pop(tool_use_id, None)
-        if p is None:
-            return
-        approver = approver.strip() or "human"
+        p = run.pending.get(tool_use_id)
+        if p is None or p.state != "awaiting":
+            return None
+        err = check_decision(p, approve, comment, typed_amount, confirm_override)
+        if err:
+            p.ui_error = err
+            return err
+        p.ui_error, p.approver, p.comment = "", approver.strip() or "human", comment.strip()
+        p.override = p.needs_override
         m = p.money or Money(None, None, None)
-        audit.log("approval_granted" if approve else "approval_rejected", "human", run.id, tool=p.tool,
-                  args=p.args, decision="APPROVED" if approve else "REJECTED", rationale=comment,
-                  amount=m.amount, currency=m.currency, payee=m.payee, detail={"approver": approver},
-                  policy_version=p.decision.policy_version)
-        if approve:
-            run.note("human", f"{approver} APPROVED {p.tool}" + (f": {comment}" if comment else ""))
-            _execute(run, tool_use_id, p.tool, p.args, p.money, approved_by=approver)
-        else:
-            run.note("human", f"{approver} REJECTED {p.tool}" + (f": {comment}" if comment else ""))
-            _result(run, tool_use_id, f"REJECTED by human approver {approver}. "
-                                      f"Comment: {comment or '(none)'}. Do not retry this action.", error=True)
-        if not run.pending and resume and run.status != "manual":
-            _flush_results(run)
-            run.status = "running"
-            _spawn(run, background)
+        common = dict(tool=p.tool, args=p.args, amount=m.amount, currency=m.currency, payee=m.payee,
+                      policy_version=p.decision.policy_version, action_id=tool_use_id)
+        audit.log("approval_granted" if approve else "approval_rejected", "human", run.id,
+                  decision="APPROVED" if approve else "REJECTED", rationale=p.comment,
+                  detail={"approver": p.approver, "agent_recommendation": p.recommendation, "override": p.override},
+                  **common)
+        if p.override:
+            audit.log("recommendation_override", "human", run.id, decision="APPROVED" if approve else "REJECTED",
+                      rationale=p.comment, detail={"approver": p.approver, "agent_recommendation": p.recommendation,
+                                                   "agent_reason": p.args.get("rationale")}, **common)
+        verb = "APPROVED" if approve else "REJECTED"
+        flag = f" (overriding Oscar's '{p.recommendation}')" if p.override else ""
+        run.note("human", f"{p.approver} {verb} {p.tool}{flag}" + (f": {p.comment}" if p.comment else ""))
+
+        if not approve:
+            run.pending.pop(tool_use_id)
+            msg = f"REJECTED by human approver {p.approver}. Reason: {p.comment or '(none)'}. Do not retry this action."
+            if p.override:
+                msg += f" This overrides your recommendation ('{p.recommendation}'); record both reasons in your report."
+            _result(run, tool_use_id, msg, error=True)
+            _maybe_resume(run, background, resume)
+            return None
+
+        if delay is None:
+            delay = float((policy.load_policy()[0].get("approval") or {}).get("undo_seconds") or 0)
+        if delay <= 0:
+            _finalize(run, tool_use_id, background, resume)
+            return None
+        p.state, p.execute_at = "scheduled", datetime.now(timezone.utc).timestamp() + delay
+        p.timer = threading.Timer(delay, _finalize_later, args=(run.id, tool_use_id, background, resume))
+        p.timer.daemon = True
+        p.timer.start()
+        run.note("system", f"{p.tool} executes in {delay:.0f}s unless undone.")
+        return None
+
+
+def undo_approval(run_id: str, tool_use_id: str, who: str = "human") -> bool:
+    """Cancel an approval still inside its undo window; the action goes back to the approval queue."""
+    run = RUNS.get(run_id)
+    if not run:
+        return False
+    with run.lock:
+        p = run.pending.get(tool_use_id)
+        if p is None or p.state != "scheduled":
+            return False
+        if p.timer:
+            p.timer.cancel()
+        m = p.money or Money(None, None, None)
+        audit.log("approval_undone", "human", run.id, tool=p.tool, args=p.args, decision="UNDONE",
+                  amount=m.amount, currency=m.currency, payee=m.payee, detail={"by": who.strip() or "human"},
+                  policy_version=p.decision.policy_version, action_id=tool_use_id)
+        run.note("human", f"{who.strip() or 'human'} UNDID the approval of {p.tool}; it is back in the queue.")
+        p.state, p.execute_at, p.timer, p.override, p.needs_override = "awaiting", None, None, False, False
+        return True
+
+
+def _finalize_later(run_id: str, tool_use_id: str, background: bool, resume: bool):
+    run = RUNS.get(run_id)
+    if run:
+        with run.lock:
+            p = run.pending.get(tool_use_id)
+            if p is not None and p.state == "scheduled":
+                _finalize(run, tool_use_id, background, resume)
+
+
+def _finalize(run: "Run", tool_use_id: str, background: bool, resume: bool):
+    p = run.pending.pop(tool_use_id)
+    note = ""
+    if p.override:
+        note = (f"NOTE: human approver {p.approver} approved this against your recommendation "
+                f"('{p.recommendation}'). Their reason: {p.comment}. Record both reasons in your report.\n")
+    _execute(run, tool_use_id, p.tool, p.args, p.money, approved_by=p.approver, note=note)
+    _maybe_resume(run, background, resume)
+
+
+def _maybe_resume(run: "Run", background: bool, resume: bool):
+    if not run.pending and resume and run.status != "manual":
+        _flush_results(run)
+        run.status = "running"
+        _spawn(run, background)
+
+
+def _amount_matches(typed: str, amount: int) -> bool:
+    digits = re.sub(r"[^\d.]", "", typed or "")
+    try:
+        return round(float(digits) * 100) == amount
+    except ValueError:
+        return False
 
 
 def propose(run: Run, name: str, args: dict, tool_use_id: str | None = None) -> str:
@@ -201,21 +311,23 @@ def _handle_tool_use(run: Run, tool_use_id: str, name: str, args: dict):
     if missing:
         return _result(run, tool_use_id, f"Missing required arguments: {', '.join(missing)}", error=True)
 
-    audit.log("tool_proposed", "agent", run.id, tool=name, args=args, rationale=args.get("rationale"))
+    audit.log("tool_proposed", "agent", run.id, tool=name, args=args, rationale=args.get("rationale"),
+              action_id=tool_use_id)
 
     money = None
     if t.money:
         try:
             money = t.resolve(args)
         except stripe.StripeError as e:
-            audit.log("tool_failed", "system", run.id, tool=name, args=args, detail=f"resolve failed: {e}")
+            audit.log("tool_failed", "system", run.id, tool=name, args=args, detail=f"resolve failed: {e}",
+                      action_id=tool_use_id)
             return _result(run, tool_use_id, f"Could not look up the object: {e.user_message or e}", error=True)
 
     d = policy.evaluate(t, args, money)
     m = money or Money(None, None, None)
     audit.log("policy_decision", "policy", run.id, tool=name, args=args, decision=d.verdict, rules=d.rules,
               rationale=args.get("rationale"), amount=m.amount, currency=m.currency, payee=m.payee,
-              detail=d.summary(), policy_version=d.policy_version)
+              detail=d.summary(), policy_version=d.policy_version, action_id=tool_use_id)
     amount_txt = f" {policy.fmt_money(m.amount, m.currency)} to {m.payee_label or m.payee}" if money else ""
     if not (t.category == "read" and d.verdict == policy.ALLOW):  # reads are audited but not shown
         run.note("policy", f"{d.verdict}: {name}{amount_txt} - {d.summary()}", verdict=d.verdict, tool=name)
@@ -227,22 +339,25 @@ def _handle_tool_use(run: Run, tool_use_id: str, name: str, args: dict):
     else:
         run.pending[tool_use_id] = Pending(tool_use_id, name, args, money, d)
         audit.log("approval_requested", "policy", run.id, tool=name, args=args, decision=d.verdict, rules=d.rules,
-                  amount=m.amount, currency=m.currency, payee=m.payee, detail=d.summary(),
-                  policy_version=d.policy_version)
+                  amount=m.amount, currency=m.currency, payee=m.payee, rationale=args.get("rationale"),
+                  detail={"reasons": d.summary(), "agent_recommendation": args.get("recommendation")},
+                  policy_version=d.policy_version, action_id=tool_use_id)
 
 
-def _execute(run: Run, tool_use_id: str, name: str, args: dict, money: Money | None, approved_by: str | None = None):
+def _execute(run: Run, tool_use_id: str, name: str, args: dict, money: Money | None, approved_by: str | None = None,
+             note: str = ""):
     t = REGISTRY[name]
     ctx = Ctx(run_id=run.id, idempotency_key=f"{run.id}:{tool_use_id}", approved_by=approved_by)
     m = money or Money(None, None, None)
     try:
         out = t.fn(args, ctx)
     except stripe.StripeError as e:
-        audit.log("tool_failed", "system", run.id, tool=name, args=args, detail=str(e))
+        audit.log("tool_failed", "system", run.id, tool=name, args=args, detail=str(e), action_id=tool_use_id)
         run.note("tool", f"{name} failed: {e.user_message or e}", tool=name, error=True)
         return _result(run, tool_use_id, f"Stripe error: {e.user_message or e}", error=True)
     except Exception as e:
-        audit.log("tool_failed", "system", run.id, tool=name, args=args, detail=f"{type(e).__name__}: {e}")
+        audit.log("tool_failed", "system", run.id, tool=name, args=args, detail=f"{type(e).__name__}: {e}",
+                  action_id=tool_use_id)
         return _result(run, tool_use_id, f"Tool error: {type(e).__name__}: {e}", error=True)
 
     stripe_id = out.get("id") if isinstance(out, dict) else None
@@ -250,7 +365,8 @@ def _execute(run: Run, tool_use_id: str, name: str, args: dict, money: Money | N
         audit.log("tool_executed", "agent", run.id, tool=name, args=args, rationale=args.get("rationale"),
                   amount=m.amount if t.money else None, currency=m.currency if t.money else None,
                   payee=m.payee if t.money else None, stripe_id=stripe_id,
-                  detail={"result": out, "approved_by": approved_by or ("policy:auto" if t.money else None)})
+                  detail={"result": out, "approved_by": approved_by or ("policy:auto" if t.money else None)},
+                  action_id=tool_use_id)
         if name == "escalate_to_human":
             run.note("escalation", f"[{args.get('severity')}] {args.get('summary')}", tool=name)
         elif name == "record_finding":
@@ -259,7 +375,7 @@ def _execute(run: Run, tool_use_id: str, name: str, args: dict, money: Money | N
             run.note("tool", f"{name} executed" + (f" -> {stripe_id}" if stripe_id else ""), tool=name)
     else:
         run.note("read", f"{name}({_short(args)})", tool=name)
-    _result(run, tool_use_id, json.dumps(out, default=str))
+    _result(run, tool_use_id, note + json.dumps(out, default=str))
 
 
 def _result(run: Run, tool_use_id: str, content: str, error: bool = False):

@@ -45,28 +45,33 @@ def main():
     # 1. small refund to an allowlisted customer -> ALLOW + executed
     small = random.randint(101, 999)  # random so re-runs don't trip the duplicate rule
     tid = agent.propose(run, "create_refund", {"payment_intent": acme_pi.id, "amount": small,
-                                               "rationale": "Smoke test: small goodwill refund to allowlisted customer"})
+                                               "rationale": "Smoke test: small goodwill refund to allowlisted customer",
+                                               "recommendation": "approve"})
     res = run.results.get(tid, {})
     check("ALLOW executes small refund", not res.get("is_error") and '"re_' in res.get("content", ""),
           res.get("content", "")[:80])
 
     # 2. huge charge -> DENY over_hard_limit (nothing hits Stripe)
     tid = agent.propose(run, "charge_customer", {"customer": acme.id, "amount": 9_000_000, "currency": "gbp",
-                                                 "rationale": "Smoke test: should exceed the hard limit"})
+                                                 "rationale": "Smoke test: should exceed the hard limit",
+                                                 "recommendation": "reject"})
     res = run.results.get(tid, {})
     check("DENY over hard limit", res.get("is_error") and "over_hard_limit" in res.get("content", ""))
 
     # 3. missing rationale -> DENY
-    tid = agent.propose(run, "create_refund", {"payment_intent": acme_pi.id, "amount": 100, "rationale": "ok"})
+    tid = agent.propose(run, "create_refund", {"payment_intent": acme_pi.id, "amount": 100, "rationale": "ok",
+                                               "recommendation": "approve"})
     res = run.results.get(tid, {})
     check("DENY missing rationale", res.get("is_error") and "missing_rationale" in res.get("content", ""))
 
     # 4. refund to an unknown payee -> NEEDS_APPROVAL, then approve -> executed
     tid = agent.propose(run, "create_refund", {"payment_intent": shady_pi.id, "amount": 500,
-                                               "rationale": "Smoke test: refund to a payee not on the allowlist"})
+                                               "rationale": "Smoke test: refund to a payee not on the allowlist",
+                                               "recommendation": "unsure"})
     check("NEEDS_APPROVAL for unknown payee", tid in run.pending,
           str(run.pending[tid].decision.rules) if tid in run.pending else "")
-    agent.resolve_approval(run.id, tid, True, "smoke-test", "approved by script", background=False, resume=False)
+    agent.resolve_approval(run.id, tid, True, "smoke-test", "approved by script", delay=0,
+                           background=False, resume=False)
     res = run.results.get(tid, {})
     check("approved action executes", not res.get("is_error") and '"re_' in res.get("content", ""))
 

@@ -10,6 +10,10 @@ hash-chained audit log and human approval queue. See README.md for the architect
 - Money tools: `@tool(..., money=True, resolve=fn)`; `resolve` must read the real amount/payee from Stripe.
   Amounts are minor units. Write calls pass `options=_opts(ctx)` (idempotency key).
 - Policy rules live in `policy.evaluate()` with stable rule ids; `policy.yaml` is hot-reloaded.
+- Money tools and `opinion=True` tools require `rationale` + `recommendation` (approve/reject/unsure).
+  Human decisions go through `agent.resolve_approval`, which enforces: override needs confirmation + reason,
+  amounts above `approval.confirm_above` must be typed, approvals wait `approval.undo_seconds` (undo_approval).
+- Audit events of one tool call share `action_id` (= tool_use_id); `audit_view.headline_groups` builds the UI.
 - Audit log is append-only; never UPDATE/DELETE rows (breaks `verify_chain`). Add events via `audit.log()`.
 - Claude calls: `claude().beta.messages.create` with adaptive thinking + `output_config.effort`; append
   `response.content` unchanged to history (thinking blocks must be preserved). No forced `tool_choice`

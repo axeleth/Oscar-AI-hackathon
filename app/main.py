@@ -1,14 +1,13 @@
 """FastAPI app: task runner, approval queue, audit log. Run: uvicorn app.main:app --reload"""
 import csv
 import io
-import json
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
-from . import agent, audit, config, policy
+from . import agent, audit, audit_view, config, policy
 from .tools import REGISTRY
 
 templates = Jinja2Templates(directory=str(config.ROOT / "app" / "templates"))
@@ -46,10 +45,10 @@ def _run_version(run) -> str:
 
 
 @app.get("/", response_class=HTMLResponse)
-def index(request: Request, run: str | None = None):
+def index(request: Request, run: str | None = None, reads: int = 0):
     current = agent.RUNS.get(run) if run else None
     return templates.TemplateResponse(request, "index.html", _ctx(request, current=current, v=_run_version(current),
-                                                                  pending=agent.pending_approvals()))
+                                                                  pending=agent.pending_approvals(), reads=reads))
 
 
 @app.post("/runs")
@@ -80,32 +79,42 @@ def runs_partial(request: Request, current: str | None = None):
 
 
 @app.get("/partials/approvals", response_class=HTMLResponse)
-def approvals_partial(request: Request):
-    return templates.TemplateResponse(request, "partials/approvals.html",
-                                      _ctx(request, pending=agent.pending_approvals()))
+def approvals_partial(request: Request, v: str = ""):
+    pending = agent.pending_approvals()
+    version = "|".join(f"{p.tool_use_id}:{p.state}:{p.ui_error}:{p.needs_override}" for _, p in pending) or "empty"
+    if v == version:
+        return Response(status_code=204)
+    return templates.TemplateResponse(request, "partials/approvals.html", _ctx(request, pending=pending, v=version))
 
 
 @app.get("/partials/audit", response_class=HTMLResponse)
-def audit_partial(request: Request, run_id: str | None = None, v: str = ""):
-    rows = audit.query(run_id=run_id or None, limit=150)
+def audit_partial(request: Request, run_id: str | None = None, reads: int = 0, v: str = ""):
+    rows = audit.query(run_id=run_id or None, limit=2000)
     ok, n, bad = audit.verify_chain()
-    version = f"{rows[0]['id'] if rows else 0}:{n}:{ok}"
+    version = f"{rows[0]['id'] if rows else 0}:{n}:{ok}:{reads}"
     if v == version:
         return Response(status_code=204)
-    for r in rows:
-        r["rules_list"] = json.loads(r["rules"]) if r.get("rules") else []
+    groups = audit_view.headline_groups(rows, show_reads=bool(reads))
     return templates.TemplateResponse(request, "partials/audit.html",
-                                      _ctx(request, rows=rows, chain_ok=ok, chain_n=n, chain_bad=bad, run_id=run_id,
-                                           v=version))
+                                      _ctx(request, groups=groups, chain_ok=ok, chain_n=n, chain_bad=bad,
+                                           run_id=run_id, reads=reads, v=version))
 
 
 # ---- actions ------------------------------------------------------------------
 
 @app.post("/approvals/{run_id}/{tool_use_id}", response_class=HTMLResponse)
 def decide(request: Request, run_id: str, tool_use_id: str, decision: str = Form(...),
-           approver: str = Form("human"), comment: str = Form("")):
-    if run_id in agent.RUNS:
-        agent.resolve_approval(run_id, tool_use_id, decision == "approve", approver, comment)
+           approver: str = Form("human"), comment: str = Form(""), typed_amount: str = Form(""),
+           confirm_override: str = Form("")):
+    if run_id in agent.RUNS:  # a refused decision leaves an error on the card instead of acting
+        agent.resolve_approval(run_id, tool_use_id, decision == "approve", approver, comment,
+                               typed_amount=typed_amount, confirm_override=confirm_override == "1")
+    return approvals_partial(request)
+
+
+@app.post("/approvals/{run_id}/{tool_use_id}/undo", response_class=HTMLResponse)
+def undo(request: Request, run_id: str, tool_use_id: str, approver: str = Form("human")):
+    agent.undo_approval(run_id, tool_use_id, approver)
     return approvals_partial(request)
 
 

@@ -23,10 +23,22 @@ def main():
             m = p.money
             print(f">>> APPROVAL NEEDED: {p.tool} {policy.fmt_money(m.amount, m.currency) if m else ''} "
                   f"to {m.payee if m else '-'}\n    why held: {p.decision.summary()}\n"
-                  f"    rationale: {p.args.get('rationale')}")
+                  f"    Oscar recommends: {(p.recommendation or 'no opinion').upper()} - {p.args.get('rationale')}")
             ok = input("    approve? [y/N] ").strip().lower() == "y"
-            comment = input("    comment: ")
-            agent.resolve_approval(run.id, p.tool_use_id, ok, "cli", comment, background=False)
+            comment = input("    reason: ")
+            typed, override = "", False
+            while err := agent.check_decision(p, ok, comment, typed, override):
+                print(f"    ! {err}")
+                if p.needs_override and not override:
+                    override = input("    override Oscar? [y/N] ").strip().lower() == "y"
+                    if not override:
+                        ok = not ok
+                        continue
+                    comment = input("    your reason for overriding: ")
+                else:
+                    typed = input("    type the amount: ")
+            agent.resolve_approval(run.id, p.tool_use_id, ok, "cli", comment, typed_amount=typed,
+                                   confirm_override=override, delay=0, background=False)
     print(f"status: {run.status}")
 
 

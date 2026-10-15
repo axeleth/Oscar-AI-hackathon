@@ -1,31 +1,45 @@
 <span hidden data-v="{{ v }}"></span>
-<div class="small" style="margin-bottom:6px">
+<div class="small row" style="margin-bottom:6px">
   {% if chain_ok %}<span class="pill ALLOW">hash chain intact · {{ chain_n }} rows</span>
   {% else %}<span class="pill DENY">hash chain BROKEN at row {{ chain_bad }}</span>{% endif %}
   {% if run_id %}<span class="muted">showing run {{ run_id }} · <a href="/">all runs</a></span>{% endif %}
+  <span class="muted">· {% if reads %}<a href="/?{% if run_id %}run={{ run_id }}&{% endif %}reads=0">hide reads</a>
+    {% else %}<a href="/?{% if run_id %}run={{ run_id }}&{% endif %}reads=1">show reads</a>{% endif %}</span>
 </div>
-<table>
-  <thead><tr><th>#</th><th>time</th><th>run</th><th>actor</th><th>event</th><th>tool</th><th>decision</th>
-    <th>amount</th><th>payee</th><th>rules / detail</th><th>rationale</th><th>stripe</th><th>policy</th></tr></thead>
-  <tbody>
-  {% for r in rows %}
-  <tr>
-    <td class="muted">{{ r.id }}</td>
-    <td class="muted">{{ r.ts[11:19] }}</td>
-    <td><code>{{ r.run_id or "" }}</code></td>
-    <td>{{ r.actor }}</td>
-    <td>{{ r.event }}</td>
-    <td>{{ r.tool or "" }}</td>
-    <td>{% if r.decision %}<span class="pill {{ r.decision }}">{{ r.decision }}</span>{% endif %}</td>
-    <td>{% if r.amount is not none %}{{ fmt_money(r.amount, r.currency) }}{% endif %}</td>
-    <td>{{ r.payee or "" }}</td>
-    <td>{% if r.rules_list %}<code>{{ r.rules_list | join(", ") }}</code><br>{% endif %}<span class="muted">{{ (r.detail or "")[:160] }}</span></td>
-    <td>{{ (r.rationale or "")[:200] }}</td>
-    <td><code>{{ r.stripe_id or "" }}</code></td>
-    <td class="muted">{{ r.policy_version or "" }}</td>
-  </tr>
+<div class="audit">
+  {% for g in groups %}
+  <details data-key="{{ g.key }}">
+    <summary>
+      <span class="muted">{{ g.ts[11:19] }}</span>
+      <code class="muted">{{ g.run_id or "" }}</code>
+      <span class="title">{{ g.title }}</span>
+      <span>{% if g.outcome %}<span class="pill {{ g.outcome_class }}">{{ g.outcome }}</span>{% endif %}
+        {% if g.override %}<span class="pill DENY" title="Human decided against Oscar's recommendation">override</span>{% endif %}
+        {% if g.undone %}<span class="pill NEEDS_APPROVAL">undone once</span>{% endif %}</span>
+      <span class="muted small">{{ g.who }}</span>
+    </summary>
+    <div class="steps">
+      {% if g.rationale %}<div class="small"><b>Oscar's reason:</b> {{ g.rationale }}
+        {% if g.recommendation %} · <b>recommended:</b> {{ g.recommendation }}{% endif %}</div>{% endif %}
+      {% if g.stripe_id %}<div class="small"><b>Stripe:</b> <code>{{ g.stripe_id }}</code></div>{% endif %}
+      <table>
+        <thead><tr><th>#</th><th>time</th><th>actor</th><th>step</th><th>decision</th><th>rules / detail</th><th>reason</th><th>policy</th></tr></thead>
+        <tbody>
+        {% for e in g.events %}
+        <tr>
+          <td class="muted">{{ e.id }}</td><td class="muted">{{ e.ts[11:19] }}</td><td>{{ e.actor }}</td>
+          <td>{{ e.event | replace("_", " ") }}</td>
+          <td>{% if e.decision %}<span class="pill {{ e.decision }}">{{ e.decision }}</span>{% endif %}</td>
+          <td>{% if e.rules_list %}<code>{{ e.rules_list | join(", ") }}</code><br>{% endif %}<span class="muted">{{ e.detail_text }}</span></td>
+          <td>{{ (e.rationale or "")[:200] if e.event not in ("tool_proposed", "policy_decision", "tool_executed", "approval_requested") else "" }}</td>
+          <td class="muted">{{ e.policy_version or "" }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
   {% else %}
-  <tr><td colspan="13" class="muted">No events yet.</td></tr>
+  <p class="muted">No events yet.</p>
   {% endfor %}
-  </tbody>
-</table>
+</div>
