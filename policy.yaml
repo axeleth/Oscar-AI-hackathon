@@ -1,0 +1,38 @@
+# Oscar spending policy. Deterministic code (app/policy.py) enforces this - NOT the LLM.
+# Reloaded on every decision, so you can edit it live during a demo.
+# All amounts are in MINOR units (pence/cents): 10000 = £100.00
+
+currency: gbp
+
+# suggest   -> every money-moving action needs human approval
+# threshold -> auto-execute below approval.threshold, human approval above it   (default)
+# full      -> auto-execute anything within hard limits (no approval threshold)
+autonomy: threshold
+
+limits:
+  max_per_transaction: 500000     # £5,000 - above this is DENIED outright, even with approval
+  daily_total: 1000000            # £10,000 of executed money movement per UTC day
+
+approval:
+  threshold: 20000                # £200 - above this needs a human (in 'threshold' mode)
+  required_tools:                 # always need a human, whatever the amount
+    - submit_dispute_evidence
+    - void_invoice
+    - create_payout
+
+payees:
+  # Matched against customer email (or customer id). 'own_bank_account' = payouts to the company.
+  allowlist:
+    - own_bank_account
+    - billing@acme.test
+    - accounts@globex.test
+    - finance@initech.test
+  unknown_payee: needs_approval   # needs_approval | deny
+
+duplicates:
+  window_minutes: 1440            # same tool + payee + amount executed within 24h -> needs approval
+
+require_rationale: true           # money tools must explain themselves (min 15 chars)
+
+blocked_tools: []                 # e.g. [create_payout] to remove a capability entirely
+enabled_tools: []                 # empty = all registered tools; otherwise only these are exposed to the agent

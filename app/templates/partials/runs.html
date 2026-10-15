@@ -1,0 +1,10 @@
+<div class="runs">
+  {% for r in runs %}
+  <a href="/?run={{ r.id }}" class="{% if current and current.id == r.id %}active{% endif %}">
+    <span class="pill {{ r.status }}">{{ r.status | replace("_", " ") }}</span>
+    <code>{{ r.id }}</code> {{ r.task[:90] }}{% if r.task|length > 90 %}…{% endif %}
+  </a>
+  {% else %}
+  <p class="muted">No runs yet.</p>
+  {% endfor %}
+</div>

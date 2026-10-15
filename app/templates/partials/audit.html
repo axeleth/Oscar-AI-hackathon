@@ -1,0 +1,32 @@
+<div class="small" style="margin-bottom:6px">
+  {% if chain_ok %}<span class="pill ALLOW">hash chain intact · {{ chain_n }} rows</span>
+  {% else %}<span class="pill DENY">hash chain BROKEN at row {{ chain_bad }}</span>{% endif %}
+  {% if run_id %}<span class="muted">showing run {{ run_id }} · <a href="/">all runs</a></span>{% endif %}
+</div>
+<div class="scroll">
+<table>
+  <thead><tr><th>#</th><th>time</th><th>run</th><th>actor</th><th>event</th><th>tool</th><th>decision</th>
+    <th>amount</th><th>payee</th><th>rules / detail</th><th>rationale</th><th>stripe</th><th>policy</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+  <tr>
+    <td class="muted">{{ r.id }}</td>
+    <td class="muted">{{ r.ts[11:19] }}</td>
+    <td><code>{{ r.run_id or "" }}</code></td>
+    <td>{{ r.actor }}</td>
+    <td>{{ r.event }}</td>
+    <td>{{ r.tool or "" }}</td>
+    <td>{% if r.decision %}<span class="pill {{ r.decision }}">{{ r.decision }}</span>{% endif %}</td>
+    <td>{% if r.amount is not none %}{{ fmt_money(r.amount, r.currency) }}{% endif %}</td>
+    <td>{{ r.payee or "" }}</td>
+    <td>{% if r.rules_list %}<code>{{ r.rules_list | join(", ") }}</code><br>{% endif %}<span class="muted">{{ (r.detail or "")[:160] }}</span></td>
+    <td>{{ (r.rationale or "")[:200] }}</td>
+    <td><code>{{ r.stripe_id or "" }}</code></td>
+    <td class="muted">{{ r.policy_version or "" }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="13" class="muted">No events yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>

@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Oscar</title>
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <style>
+    :root {
+      --bg: #f6f7f9; --panel: #ffffff; --text: #1b1f24; --muted: #667085; --border: #e3e6ea;
+      --accent: #4f46e5; --allow: #127a3f; --allow-bg: #e7f6ed; --deny: #b42318; --deny-bg: #fdecea;
+      --hold: #9a5b00; --hold-bg: #fff4e0; --think: #6b7280; --code: #f1f3f5;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f1115; --panel: #171a21; --text: #e6e8eb; --muted: #9aa3af; --border: #2a2f3a;
+        --accent: #8b85ff; --allow: #5fd38d; --allow-bg: #13281c; --deny: #ff8a80; --deny-bg: #2c1515;
+        --hold: #ffc46b; --hold-bg: #2b2112; --think: #9aa3af; --code: #1f232c;
+      }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text);
+           font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; }
+    header { display: flex; align-items: baseline; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--border);
+             background: var(--panel); flex-wrap: wrap; }
+    header h1 { margin: 0; font-size: 18px; }
+    header .meta { color: var(--muted); font-size: 12px; }
+    .banner { background: var(--deny-bg); color: var(--deny); padding: 10px 20px; font-weight: 600; }
+    main { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 16px; padding: 16px 20px; }
+    @media (max-width: 900px) { main { grid-template-columns: 1fr; padding: 12px 16px; } }
+    .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+    .panel h2 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+    .stack { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+    textarea, input[type=text] { width: 100%; font: inherit; color: var(--text); background: var(--bg);
+             border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+    textarea { min-height: 70px; resize: vertical; }
+    button { font: inherit; border: 0; border-radius: 8px; padding: 7px 14px; cursor: pointer; background: var(--accent); color: #fff; }
+    button.approve { background: var(--allow); } button.reject { background: var(--deny); }
+    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .muted { color: var(--muted); } .small { font-size: 12px; }
+    .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+    .ALLOW, .done, .APPROVED { background: var(--allow-bg); color: var(--allow); }
+    .DENY, .error, .REJECTED { background: var(--deny-bg); color: var(--deny); }
+    .NEEDS_APPROVAL, .awaiting_approval { background: var(--hold-bg); color: var(--hold); }
+    .running { background: var(--code); color: var(--accent); }
+    .runs a { text-decoration: none; color: inherit; display: block; padding: 6px 8px; border-radius: 6px; }
+    .runs a.active, .runs a:hover { background: var(--code); }
+    .t { padding: 6px 0; border-bottom: 1px dashed var(--border); white-space: pre-wrap; word-break: break-word; }
+    .t .k { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--muted); margin-right: 6px; }
+    .t.thinking { color: var(--think); font-style: italic; }
+    .t.policy.v-ALLOW .k { color: var(--allow); } .t.policy.v-DENY .k { color: var(--deny); }
+    .t.policy.v-NEEDS_APPROVAL .k { color: var(--hold); }
+    .t.final { font-weight: 500; } .t.escalation .k, .t.error .k { color: var(--deny); }
+    .card { border: 1px solid var(--border); border-left: 4px solid var(--hold); border-radius: 8px; padding: 10px; margin-bottom: 10px; }
+    .card .amt { font-size: 18px; font-weight: 700; }
+    code, pre { background: var(--code); border-radius: 6px; font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    pre { padding: 8px; overflow-x: auto; margin: 6px 0; white-space: pre-wrap; word-break: break-word; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th, td { text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; }
+    .scroll { overflow-x: auto; max-height: 520px; overflow-y: auto; }
+    .transcript { max-height: 560px; overflow-y: auto; }
+    a { color: var(--accent); }
+  </style>
+</head>
+<body>
+<header>
+  <h1>Oscar</h1>
+  <span class="meta">autonomous finance agent · Stripe TEST mode · model {{ model }} · policy v{{ policy_version }}
+    · autonomy <b>{{ policy.autonomy }}</b></span>
+</header>
+{% if config_error %}<div class="banner">Setup needed: {{ config_error }}</div>{% endif %}
+<main>
+  <div class="stack">
+    <section class="panel">
+      <h2>New task</h2>
+      <form method="post" action="/runs">
+        <textarea name="task" placeholder="e.g. Review all open invoices and refund any duplicate charges from this week." required></textarea>
+        <div class="row" style="margin-top:8px"><button type="submit" {% if config_error %}disabled{% endif %}>Run agent</button>
+          <span class="muted small">Every money movement is checked by policy.yaml before it executes.</span></div>
+      </form>
+    </section>
+    <section class="panel" id="run-panel"
+      {% if current %}hx-get="/partials/run/{{ current.id }}" hx-trigger="every 1.5s" hx-swap="innerHTML"{% endif %}>
+      {% include "partials/run.html" %}
+    </section>
+    <section class="panel">
+      <h2>Runs</h2>
+      <div hx-get="/partials/runs{% if current %}?current={{ current.id }}{% endif %}" hx-trigger="every 3s" hx-swap="innerHTML">
+        {% include "partials/runs.html" %}
+      </div>
+    </section>
+  </div>
+  <div class="stack">
+    <section class="panel">
+      <h2>Approval queue</h2>
+      <div id="approvals" hx-get="/partials/approvals" hx-swap="innerHTML"
+           hx-trigger="every 1.5s [!document.getElementById('approvals').contains(document.activeElement)]">
+        {% include "partials/approvals.html" %}
+      </div>
+    </section>
+    <section class="panel">
+      <h2>Policy in force</h2>
+      <div class="small">
+        <div>Auto-approve up to <b>{{ fmt_money(policy.approval.threshold, policy.currency) }}</b>;
+          hard limit <b>{{ fmt_money(policy.limits.max_per_transaction, policy.currency) }}</b>/txn,
+          <b>{{ fmt_money(policy.limits.daily_total, policy.currency) }}</b>/day.</div>
+        <div>Unknown payees: <b>{{ policy.payees.unknown_payee }}</b> · allowlist: {{ policy.payees.allowlist | join(", ") }}</div>
+        <div>Always need approval: {{ policy.approval.required_tools | join(", ") or "—" }}</div>
+      </div>
+    </section>
+  </div>
+  <section class="panel" style="grid-column: 1 / -1">
+    <h2>Audit log {% if current %}<span class="muted">· <a href="/audit.csv?run_id={{ current.id }}">CSV for this run</a></span>{% endif %}
+      <span class="muted">· <a href="/audit.csv">CSV (all)</a></span></h2>
+    <div hx-get="/partials/audit{% if current %}?run_id={{ current.id }}{% endif %}" hx-trigger="load, every 2s" hx-swap="innerHTML">
+      <span class="muted">loading…</span>
+    </div>
+  </section>
+</main>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{% if current %}
+<h2>Run {{ current.id }} <span class="pill {{ current.status }}">{{ current.status | replace("_", " ") }}</span></h2>
+<div class="transcript">
+  {% for t in current.transcript %}
+  <div class="t {{ t.kind }} {% if t.verdict %}v-{{ t.verdict }}{% endif %}"><span class="k">{{ t.kind }}</span>{{ t.text }}</div>
+  {% endfor %}
+  {% if current.status == "running" %}<div class="t muted small">working…</div>{% endif %}
+</div>
+{% else %}
+<h2>Run</h2>
+<p class="muted">Start a task, or pick a run below.</p>
+{% endif %}

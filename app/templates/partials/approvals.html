@@ -1,0 +1,24 @@
+{% for run, p in pending %}
+<div class="card">
+  <div class="row" style="justify-content: space-between">
+    <div><b>{{ p.tool }}</b> <span class="muted small">run <a href="/?run={{ run.id }}">{{ run.id }}</a></span></div>
+    {% if p.money %}<div class="amt">{{ fmt_money(p.money.amount, p.money.currency) }}</div>{% endif %}
+  </div>
+  {% if p.money %}<div class="small">to <b>{{ p.money.payee_label or p.money.payee }}</b> <span class="muted">({{ p.money.payee }})</span></div>{% endif %}
+  <div class="small" style="margin-top:6px"><b>Why held:</b> {{ p.decision.reasons | join("; ") }}</div>
+  {% if p.args.rationale %}<div class="small"><b>Agent's rationale:</b> {{ p.args.rationale }}</div>{% endif %}
+  <pre>{{ p.args | tojson(indent=2) }}</pre>
+  <form hx-post="/approvals/{{ run.id }}/{{ p.tool_use_id }}" hx-target="#approvals" hx-swap="innerHTML">
+    <div class="row">
+      <input type="text" name="approver" placeholder="Your name" value="Axel" style="max-width:130px">
+      <input type="text" name="comment" placeholder="Comment (logged)" style="flex:1; min-width:120px">
+    </div>
+    <div class="row" style="margin-top:6px">
+      <button class="approve" name="decision" value="approve">Approve</button>
+      <button class="reject" name="decision" value="reject">Reject</button>
+    </div>
+  </form>
+</div>
+{% else %}
+<p class="muted">Nothing waiting for approval.</p>
+{% endfor %}
