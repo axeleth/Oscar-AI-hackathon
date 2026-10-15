@@ -30,9 +30,15 @@ def main():
         print(f"deleted  {c.id} {c.email}")
     print(f"Removed {len(customers)} seeded customers (search index can lag ~1 min after seeding).")
 
-    if "--audit" in sys.argv and config.AUDIT_DB.exists():
-        config.AUDIT_DB.unlink()
-        print(f"deleted  {config.AUDIT_DB}")
+    if "--audit" in sys.argv:
+        if config.AUDIT_DB.exists():
+            config.AUDIT_DB.unlink()
+            print(f"deleted  {config.AUDIT_DB}")
+        from app import cognee_store
+        cognee_store.start(background=False)
+        if cognee_store.ready():
+            cognee_store.reset_decisions()
+            print("cleared  Cognee decision memory (policy graph kept)")
 
 
 if __name__ == "__main__":

@@ -72,10 +72,11 @@ def _policy_graph_model():
         metadata: dict = {"index_fields": ["role"], "identity_fields": ["role"]}
 
     class Limit(DataPoint):
+        description: str              # e.g. "£200.00 per money movement without approval" (indexed: must be text)
         amount: float
         currency: str = "GBP"
         period: str | None = None
-        metadata: dict = {"index_fields": ["amount"]}
+        metadata: dict = {"index_fields": ["description"]}
 
     class Clause(DataPoint):
         clause_id: str
@@ -94,7 +95,7 @@ def _policy_graph_model():
 
 EXTRACT_PROMPT = """Extract EVERY numbered clause of this spending policy (e.g. 2.1, 4.2) as a Clause: clause_id
 exactly as written (like "4.2"), text verbatim, the action types it governs (refund, charge, payout, invoice,
-dispute evidence, supplier payment, any money movement), monetary limits in GBP with their period, required
+dispute evidence, supplier payment, any money movement), monetary limits in GBP (each with a short text description, the amount and the period), required
 approvers, and named counterparties. Do not invent clauses."""
 
 CONSULT_PROMPT = """You answer questions about the company spending policy for Oscar, a finance agent. Using only
@@ -178,3 +179,14 @@ def remember_decision(text: str):
         await _cognee.remember(text, dataset_name=DECISIONS_DATASET, node_set=["decisions"], self_improvement=False)
         STATUS["decisions_stored"] += 1
     _submit(write())
+
+
+def reset_decisions(timeout: float = 120):
+    """Forget all remembered decisions (keeps the policy graph). Used by scripts/reset_stripe.py --audit."""
+    async def wipe():
+        try:
+            await _cognee.forget(dataset=DECISIONS_DATASET)
+        except Exception:
+            pass  # nothing stored yet
+    _run(wipe(), timeout)
+    STATUS["decisions_stored"] = 0
