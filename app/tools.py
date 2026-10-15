@@ -55,10 +55,11 @@ RATIONALE_PROP = {
 
 
 RECOMMENDATION_PROP = {
-    "type": "string", "enum": ["approve", "reject", "unsure"],
+    "type": "string", "enum": ["approve", "reject"],
     "description": "Your own opinion, shown to the human if policy holds this for approval: would YOU approve it? "
-                   "It is fine to submit a request you recommend rejecting (e.g. a customer request that breaks "
-                   "policy) so a human makes the call - say why in rationale.",
+                   "Always commit to approve or reject; put any doubt or condition in the rationale (e.g. "
+                   "'approve if the delivery team confirms'). It is fine to submit a request you recommend "
+                   "rejecting so a human makes the call.",
 }
 
 

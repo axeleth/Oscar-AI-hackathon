@@ -14,7 +14,7 @@ of these clauses; where they differ, the stricter one applies.
 - **2.3** For money movements above £1,000.00 the approver must confirm the exact amount.
 - **2.4** No single money movement may exceed £5,000.00, even with approval.
 - **2.5** Oscar may not move more than £10,000.00 in total in one day.
-- **2.6** Approvals take effect after a 10-second undo window, during which the approver may withdraw them.
+- **2.6** Approvals take effect after a 5-second undo window, during which the approver may withdraw them.
 
 ## 3. Counterparties
 - **3.1** Approved counterparties: Acme Ltd (billing@acme.test), Globex Corporation (accounts@globex.test), Initech (finance@initech.test), and the company's own bank account.

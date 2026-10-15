@@ -11,7 +11,7 @@ LABELS = {"create_refund": "Refund", "charge_customer": "Charge", "pay_invoice":
 # outcome -> css class used by the pills
 OUTCOME_CLASS = {"EXECUTED": "ALLOW", "RECORDED": "ALLOW", "BLOCKED": "DENY", "REJECTED": "DENY",
                  "FAILED": "DENY", "AWAITING APPROVAL": "NEEDS_APPROVAL", "SCHEDULED": "NEEDS_APPROVAL",
-                 "READ": "muted-pill", "EXPIRED": "muted-pill", "STARTED": "running", "DONE": "done", "ERROR": "error"}
+                 "READ": "muted-pill", "EXPIRED": "muted-pill", "MESSAGE": "running", "STARTED": "running", "DONE": "done", "ERROR": "error"}
 
 
 def _j(v):
@@ -76,6 +76,8 @@ def headline_groups(rows: list[dict], show_reads: bool = False, limit: int = 80)
         if not first.get("action_id"):  # run lifecycle and other standalone events
             if first["event"] == "run_started":
                 g.update(title=f"Run started: {(first['detail'] or '')[:140]}", outcome="STARTED", who=first["actor"])
+            elif first["event"] == "user_message":
+                g.update(title=f"Follow-up: {(first['detail'] or '')[:140]}", outcome="MESSAGE", who=first["actor"])
             elif first["event"] == "run_finished":
                 g.update(title=f"Run finished: {(first['detail'] or '')[:140]}",
                          outcome=first["decision"] or "DONE", who=first["actor"])

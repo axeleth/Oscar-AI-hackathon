@@ -20,7 +20,8 @@ GUARDRAILS = """How your actions are governed:
   limit. Explain it in your report or use escalate_to_human.
 - If an action is held for approval, the run pauses until a human decides; you will then see the decision.
 - Money-moving and other consequential tools require a `rationale` (cite the POLICY.md clauses, e.g. §4.1, and
-  the specific evidence: object ids, amounts, dates) and a `recommendation`: your honest opinion of whether a human should approve it. You may
+  the specific evidence: object ids, amounts, dates) and a `recommendation`: approve or reject - always commit to one, and state any doubt or
+  condition in the rationale. You may
   submit a request you recommend rejecting so the human can decide; say so plainly rather than proposing it as fine.
 - If a human decides against your recommendation, you will be told their reason. Respect the decision and record
   the disagreement (both reasons) in your final report.

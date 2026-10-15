@@ -88,6 +88,20 @@ def start_run(task: str, background: bool = True) -> Run:
     return run
 
 
+def continue_run(run_id: str, text: str, background: bool = True) -> Run:
+    """Follow-up message in a finished conversation: Oscar continues with its full context."""
+    run = RUNS[run_id]
+    with run.lock:
+        if run.status != "done":
+            raise RuntimeError(f"run {run_id} is {run.status}, not done")
+        run.messages.append({"role": "user", "content": text})
+        run.note("user", text)
+        run.status, run.turns, run.final = "running", 0, ""
+        audit.log("user_message", "human", run.id, detail=text, policy_version=policy.load_policy()[1])
+    _spawn(run, background)
+    return run
+
+
 def pending_approvals() -> list[tuple[Run, Pending]]:
     return [(r, p) for r in RUNS.values() for p in r.pending.values()]
 
@@ -442,8 +456,8 @@ def _execute(run: Run, tool_use_id: str, name: str, args: dict, money: Money | N
         elif name == "close_message":
             run.note("inbox", f"{args.get('message_id')} → {args.get('outcome')}: {args.get('summary')}", tool=name)
         elif name in ("consult_policy", "recall_precedents"):
-            run.note("memory", f"{name}: {args.get('question') or args.get('query')}\n→ {str(out.get('answer', ''))[:400]}",
-                     tool=name)
+            run.note("memory", f"{name} [{out.get('source', '?')}]: {args.get('question') or args.get('query')}"
+                               f"\n→ {str(out.get('answer', ''))[:500]}", tool=name)
         else:
             run.note("tool", f"{name} executed" + (f" -> {stripe_id}" if stripe_id else ""), tool=name)
     else:

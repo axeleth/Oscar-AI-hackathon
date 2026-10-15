@@ -21,7 +21,7 @@
       <div class="msg alert"><b>Escalated to a human</b> · {{ it.text }}</div>
     {% elif it.type == "final" %}
       <div class="msg oscar final"><div class="who">Oscar · report</div><div class="bubble md">{{ it.html | safe }}</div></div>
-      {% if artifacts %}
+      {% if artifacts and it.last_final %}
       <div class="artifacts">
         {% for g in artifacts %}
         <details class="artifact {{ g.outcome_class }}">

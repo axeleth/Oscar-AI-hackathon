@@ -37,6 +37,9 @@ def chat_items(run) -> list[dict]:
             items.append({"type": "human", "text": t["text"]})
         elif kind == "error":
             items.append({"type": "error", "text": t["text"]})
+    finals = [it for it in items if it["type"] == "final"]
+    if finals:
+        finals[-1]["last_final"] = True  # artifact cards go under the latest report only
     return items
 
 

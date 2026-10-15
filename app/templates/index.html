@@ -125,6 +125,9 @@
     .artifact summary::-webkit-details-marker { display: none; }
     .artifact .atitle { display: block; margin-top: 4px; font-weight: 600; }
     .artifact > div { margin-top: 6px; display: grid; gap: 3px; word-break: break-word; }
+    .composer { display: flex; gap: 8px; align-items: flex-end; margin-top: 10px; padding-top: 10px;
+                border-top: 1px solid var(--border); }
+    .composer textarea { min-height: 44px; flex: 1; }
     .htmx-indicator { display: none; } .htmx-request .htmx-indicator, .htmx-request.htmx-indicator { display: inline; }
     @media (max-width: 700px) { .audit summary { grid-template-columns: 56px minmax(0, 1fr) auto; }
       .audit summary > :nth-child(2), .audit summary > :nth-child(5) { display: none; } }
@@ -167,6 +170,11 @@
       e.preventDefault(); t.classList.toggle('locked'); placePop(t);
     });
     document.addEventListener('scroll', () => document.querySelectorAll('.term.locked').forEach(placePop), true);
+    document.addEventListener('click', e => {  // a left-click anywhere outside a popup closes pinned popups
+      if (e.target.closest('.term .pop')) return;
+      document.querySelectorAll('.term.locked').forEach(t => t.classList.remove('locked'));
+      if (document.activeElement && document.activeElement.classList.contains('term')) document.activeElement.blur();
+    });
     // Undo-window countdowns on approval cards.
     setInterval(() => document.querySelectorAll('[data-execute-at]').forEach(el => {
       el.textContent = Math.max(0, Math.ceil((+el.dataset.executeAt - Date.now()) / 1000));
@@ -181,18 +189,11 @@
   <h1>Oscar</h1>
   <span class="meta">autonomous finance agent · Stripe TEST mode · model {{ model }} · policy v{{ policy_version }}
     · autonomy <b>{{ policy.autonomy }}</b></span>
+  <span hx-get="/partials/memory" hx-trigger="load, every 5s" hx-swap="innerHTML"></span>
 </header>
 {% if config_error %}<div class="banner">Setup needed: {{ config_error }}</div>{% endif %}
 <main>
   <div class="stack">
-    <section class="panel">
-      <h2>New task</h2>
-      <form method="post" action="/runs">
-        <textarea name="task" placeholder="e.g. Review all open invoices and refund any duplicate charges from this week." required></textarea>
-        <div class="row" style="margin-top:8px"><button type="submit" {% if config_error %}disabled{% endif %}>Run agent</button>
-          <span class="muted small">Every money movement is checked by policy.yaml before it executes.</span></div>
-      </form>
-    </section>
     <section class="panel">
       <div class="transcript keep-scroll" id="run-scroll" data-follow="1">
         <div id="run-body" {% if current %}hx-get="/partials/run/{{ current.id }}" hx-trigger="every 1.5s"
@@ -200,6 +201,15 @@
           {% include "partials/run.html" %}
         </div>
       </div>
+      <form class="composer" method="post" action="/runs">
+        {% if current %}<input type="hidden" name="run_id" value="{{ current.id }}">{% endif %}
+        <textarea name="task" rows="2" required
+          placeholder="{% if current %}Message Oscar… (continues this conversation once the run is done){% else %}Give Oscar a task… e.g. Work through the finance inbox. Handle every message according to policy.{% endif %}"
+          onkeydown="if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); this.form.requestSubmit(); }"></textarea>
+        <button type="submit" {% if config_error %}disabled{% endif %}>Send</button>
+      </form>
+      <div class="muted small" style="margin-top:6px">Enter to send · Shift+Enter for a new line ·
+        <a href="/">new conversation</a> · every money movement is checked against the policy before it executes</div>
     </section>
     <section class="panel">
       <h2>Runs</h2>

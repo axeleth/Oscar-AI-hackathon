@@ -7,7 +7,7 @@ from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
-from . import agent, audit, audit_view, chat_view, config, explain, policy
+from . import agent, audit, audit_view, chat_view, config, explain, memory, policy
 from .tools import REGISTRY
 
 templates = Jinja2Templates(directory=str(config.ROOT / "app" / "templates"))
@@ -40,6 +40,8 @@ def _config_error() -> str | None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.config_error = _config_error()
+    from . import cognee_store
+    cognee_store.start(background=True)  # builds/refreshes the policy knowledge graph without blocking startup
     expired = agent.expire_orphaned_approvals()
     if expired:
         print(f"Closed {expired} orphaned approval(s) from a previous run as EXPIRED")
@@ -76,9 +78,16 @@ def index(request: Request, run: str | None = None, reads: int = 0):
 
 
 @app.post("/runs")
-def create_run(request: Request, task: str = Form(...)):
+def create_run(request: Request, task: str = Form(...), run_id: str = Form("")):
+    """Chat composer: continues a finished conversation, otherwise starts a new run."""
     if request.app.state.config_error:
         return RedirectResponse("/", status_code=303)
+    existing = agent.RUNS.get(run_id) if run_id else None
+    if existing and existing.status == "done":
+        agent.continue_run(existing.id, task.strip())
+        return RedirectResponse(f"/?run={existing.id}", status_code=303)
+    if existing and existing.status in ("running", "awaiting_approval"):
+        return RedirectResponse(f"/?run={existing.id}", status_code=303)  # busy: ignore until it finishes
     run = agent.start_run(task.strip())
     return RedirectResponse(f"/?run={run.id}", status_code=303)
 
@@ -162,6 +171,22 @@ def run_json(run_id: str):
     return {"id": r.id, "task": r.task, "status": r.status, "final": r.final, "transcript": r.transcript,
             "pending": [{"tool_use_id": p.tool_use_id, "tool": p.tool, "args": p.args,
                          "reasons": p.decision.reasons} for p in r.pending.values()]}
+
+
+@app.get("/api/memory")
+def memory_status():
+    return memory.status()
+
+
+@app.get("/partials/memory", response_class=HTMLResponse)
+def memory_badge():
+    st = memory.status()
+    cls = {"ready": "ALLOW", "building": "NEEDS_APPROVAL", "error": "DENY"}.get(st["state"], "muted-pill")
+    label = {"ready": "Cognee memory ready", "building": "Cognee building policy graph…",
+             "error": "Cognee error (keyword fallback)"}.get(st["state"], "keyword memory")
+    from html import escape
+    return HTMLResponse(f'<span class="pill {cls}" title="{escape(st["detail"])}">{label}'
+                        f'{" · " + str(st["decisions_stored"]) + " decisions" if st["decisions_stored"] else ""}</span>')
 
 
 @app.get("/api/audit/verify")
