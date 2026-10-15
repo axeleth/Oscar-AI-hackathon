@@ -156,8 +156,8 @@ def _loop(run: Run):
                 for b in response.content:
                     if b.type == "thinking" and getattr(b, "thinking", ""):
                         run.note("thinking", b.thinking)
-                    elif b.type == "text" and b.text.strip():
-                        run.note("agent", b.text)
+                    elif b.type == "text" and b.text.strip() and response.stop_reason == "tool_use":
+                        run.note("agent", b.text)  # the final answer is shown once, as "final"
 
                 if response.stop_reason == "refusal":
                     return _finish(run, "error", "Model declined the request (refusal).")
@@ -217,7 +217,8 @@ def _handle_tool_use(run: Run, tool_use_id: str, name: str, args: dict):
               rationale=args.get("rationale"), amount=m.amount, currency=m.currency, payee=m.payee,
               detail=d.summary(), policy_version=d.policy_version)
     amount_txt = f" {policy.fmt_money(m.amount, m.currency)} to {m.payee_label or m.payee}" if money else ""
-    run.note("policy", f"{d.verdict}: {name}{amount_txt} - {d.summary()}", verdict=d.verdict, tool=name)
+    if not (t.category == "read" and d.verdict == policy.ALLOW):  # reads are audited but not shown
+        run.note("policy", f"{d.verdict}: {name}{amount_txt} - {d.summary()}", verdict=d.verdict, tool=name)
 
     if d.verdict == policy.ALLOW:
         _execute(run, tool_use_id, name, args, money)
