@@ -7,6 +7,7 @@ amount/payee from Stripe, so the policy engine never trusts the LLM's own claim 
 Tool functions take (args, ctx) and return a JSON-serialisable dict. Keep results small: the
 `slim()` helper trims Stripe objects to the fields the agent actually needs.
 """
+import os
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -402,7 +403,7 @@ def record_finding(args, ctx):
 # --------------------------------------------------------------------------- inbox (demo trigger)
 # A seeded inbox of finance requests (scenarios/inbox.json). Handled-state lives in memory per server run.
 
-INBOX_FILE = config.ROOT / "scenarios" / "inbox.json"
+INBOX_FILE = config.ROOT / os.getenv("OSCAR_INBOX", "scenarios/inbox.json")  # inbox_demo.json = 4-message demo
 INBOX_STATE: dict[str, dict] = {}
 
 
