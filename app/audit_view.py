@@ -11,7 +11,7 @@ LABELS = {"create_refund": "Refund", "charge_customer": "Charge", "pay_invoice":
 # outcome -> css class used by the pills
 OUTCOME_CLASS = {"EXECUTED": "ALLOW", "RECORDED": "ALLOW", "BLOCKED": "DENY", "REJECTED": "DENY",
                  "FAILED": "DENY", "AWAITING APPROVAL": "NEEDS_APPROVAL", "SCHEDULED": "NEEDS_APPROVAL",
-                 "READ": "muted-pill", "STARTED": "running", "DONE": "done", "ERROR": "error"}
+                 "READ": "muted-pill", "EXPIRED": "muted-pill", "STARTED": "running", "DONE": "done", "ERROR": "error"}
 
 
 def _j(v):
@@ -29,6 +29,8 @@ def _outcome(events: list[dict], is_read: bool, is_agent_tool: bool) -> str:
         return "FAILED"
     if "approval_rejected" in kinds:
         return "REJECTED"
+    if "approval_expired" in kinds:
+        return "EXPIRED"
     if any(e["event"] == "policy_decision" and e["decision"] == "DENY" for e in events):
         return "BLOCKED"
     last_approval = [k for k in kinds if k in ("approval_requested", "approval_granted", "approval_undone")]
@@ -38,8 +40,8 @@ def _outcome(events: list[dict], is_read: bool, is_agent_tool: bool) -> str:
 
 
 ACTION_EVENTS = {"tool_proposed", "policy_decision", "approval_requested", "approval_granted", "approval_rejected",
-                 "approval_undone", "recommendation_override", "tool_executed", "tool_failed"}
-CLOSING = {"tool_executed", "tool_failed", "approval_rejected"}
+                 "approval_undone", "recommendation_override", "tool_executed", "tool_failed", "approval_expired"}
+CLOSING = {"tool_executed", "tool_failed", "approval_rejected", "approval_expired"}
 
 
 def _infer_legacy_action_ids(rows: list[dict]) -> None:
@@ -118,6 +120,8 @@ def headline_groups(rows: list[dict], show_reads: bool = False, limit: int = 80)
         decided = next((e for e in reversed(ev) if e["event"] in ("approval_granted", "approval_rejected")), None)
         if decided:
             who = _j(decided.get("detail")).get("approver") or "human"
+        elif outcome == "EXPIRED":
+            who = "system: run ended before a decision"
         elif outcome == "BLOCKED":
             who = "policy: " + ", ".join(_j(policy_ev.get("rules")) or [])
         elif outcome == "EXECUTED" and executed:

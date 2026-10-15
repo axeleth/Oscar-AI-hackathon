@@ -25,8 +25,8 @@
       {% if g.tool %}<form class="why row" hx-post="/why" hx-target="next .why-out" hx-swap="innerHTML"
             hx-indicator="this">
         <input type="hidden" name="key" value="{{ g.key }}">
-        <input type="text" name="question" placeholder="Ask why… (e.g. why did you pay this?)" style="flex:1; min-width:160px">
-        <button type="submit">Why?</button><span class="muted small htmx-indicator">asking Oscar…</span>
+        <input type="text" name="question" placeholder="Ask Oscar about this decision… (e.g. why did you pay this?)" style="flex:1; min-width:160px">
+        <button type="submit">Go!</button><span class="muted small htmx-indicator">asking Oscar…</span>
       </form><div class="why-out"></div>{% endif %}
       <table>
         <thead><tr><th>#</th><th>time</th><th>actor</th><th>step</th><th>decision</th><th>rules / detail</th><th>reason</th><th>policy</th></tr></thead>

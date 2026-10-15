@@ -27,6 +27,9 @@ def _config_error() -> str | None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.config_error = _config_error()
+    expired = agent.expire_orphaned_approvals()
+    if expired:
+        print(f"Closed {expired} orphaned approval(s) from a previous run as EXPIRED")
     yield
 
 
@@ -121,11 +124,10 @@ def undo(request: Request, run_id: str, tool_use_id: str, approver: str = Form("
 @app.post("/why", response_class=HTMLResponse)
 def why(key: str = Form(...), question: str = Form("")):
     try:
-        answer = explain.why(key, question)
+        return HTMLResponse(explain.render_html(explain.why(key, question)))
     except Exception as e:
-        answer = f"Explanation failed: {type(e).__name__}: {e}"
-    from html import escape
-    return HTMLResponse(f'<div class="why-answer">{escape(answer)}</div>')
+        from html import escape
+        return HTMLResponse(f'<div class="why-answer">Explanation failed: {escape(f"{type(e).__name__}: {e}")}</div>')
 
 
 # ---- JSON / exports -------------------------------------------------------------

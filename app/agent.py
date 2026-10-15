@@ -240,6 +240,29 @@ def _amount_matches(typed: str, amount: int) -> bool:
         return False
 
 
+def expire_orphaned_approvals() -> int:
+    """Approvals still awaiting a decision in the audit log whose run no longer exists in this process
+    (server restart, or a script that exited) can never be acted on: close them as EXPIRED so the audit
+    log never shows a pending approval the queue can't show. Nothing was executed for them."""
+    from . import audit_view
+    rows = audit.query(limit=100000)
+    n = 0
+    for g in audit_view.headline_groups(rows, show_reads=False, limit=100000):
+        if g["outcome"] not in ("AWAITING APPROVAL", "SCHEDULED"):
+            continue
+        run = RUNS.get(g["run_id"])
+        action_id = g["events"][-1].get("action_id")
+        if run and action_id in run.pending:
+            continue
+        m = next((e for e in g["events"] if e.get("amount") is not None), {})
+        audit.log("approval_expired", "system", g["run_id"], tool=g.get("tool"), amount=m.get("amount"),
+                  currency=m.get("currency"), payee=m.get("payee"), decision="EXPIRED", action_id=action_id,
+                  detail="The run ended before a decision (server restart or script exit). Nothing was executed; "
+                         "re-run the task to retry.")
+        n += 1
+    return n
+
+
 def propose(run: Run, name: str, args: dict, tool_use_id: str | None = None) -> str:
     """Push one tool call through the gate without the LLM (scripts/tests). Returns the tool_use_id."""
     tool_use_id = tool_use_id or f"manual_{uuid.uuid4().hex[:10]}"
