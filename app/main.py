@@ -5,7 +5,7 @@ import json
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
 from . import agent, audit, config, policy
@@ -41,10 +41,15 @@ def _ctx(request: Request, **kw) -> dict:
             "policy_version": version, "runs": runs, "model": config.MODEL, **kw}
 
 
+def _run_version(run) -> str:
+    return f"{run.status}:{len(run.transcript)}:{len(run.pending)}" if run else "none"
+
+
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request, run: str | None = None):
     current = agent.RUNS.get(run) if run else None
-    return templates.TemplateResponse(request, "index.html", _ctx(request, current=current, pending=agent.pending_approvals()))
+    return templates.TemplateResponse(request, "index.html", _ctx(request, current=current, v=_run_version(current),
+                                                                  pending=agent.pending_approvals()))
 
 
 @app.post("/runs")
@@ -56,10 +61,16 @@ def create_run(request: Request, task: str = Form(...)):
 
 
 # ---- htmx partials (polled) --------------------------------------------------
+# Polled boxes send ?v=<version they show>; 204 means "unchanged", so htmx skips the swap
+# (no flicker, scroll position and text selection survive).
 
 @app.get("/partials/run/{run_id}", response_class=HTMLResponse)
-def run_partial(request: Request, run_id: str):
-    return templates.TemplateResponse(request, "partials/run.html", _ctx(request, current=agent.RUNS.get(run_id)))
+def run_partial(request: Request, run_id: str, v: str = ""):
+    run = agent.RUNS.get(run_id)
+    version = _run_version(run)
+    if v == version:
+        return Response(status_code=204)
+    return templates.TemplateResponse(request, "partials/run.html", _ctx(request, current=run, v=version))
 
 
 @app.get("/partials/runs", response_class=HTMLResponse)
@@ -75,13 +86,17 @@ def approvals_partial(request: Request):
 
 
 @app.get("/partials/audit", response_class=HTMLResponse)
-def audit_partial(request: Request, run_id: str | None = None):
+def audit_partial(request: Request, run_id: str | None = None, v: str = ""):
     rows = audit.query(run_id=run_id or None, limit=150)
+    ok, n, bad = audit.verify_chain()
+    version = f"{rows[0]['id'] if rows else 0}:{n}:{ok}"
+    if v == version:
+        return Response(status_code=204)
     for r in rows:
         r["rules_list"] = json.loads(r["rules"]) if r.get("rules") else []
-    ok, n, bad = audit.verify_chain()
     return templates.TemplateResponse(request, "partials/audit.html",
-                                      _ctx(request, rows=rows, chain_ok=ok, chain_n=n, chain_bad=bad, run_id=run_id))
+                                      _ctx(request, rows=rows, chain_ok=ok, chain_n=n, chain_bad=bad, run_id=run_id,
+                                           v=version))
 
 
 # ---- actions ------------------------------------------------------------------

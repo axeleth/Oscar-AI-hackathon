@@ -61,7 +61,25 @@
     .scroll { overflow-x: auto; max-height: 520px; overflow-y: auto; }
     .transcript { max-height: 560px; overflow-y: auto; }
     a { color: var(--accent); }
+    .sticky { position: sticky; top: 0; background: var(--panel); padding: 2px 0 8px; margin: 0; z-index: 1; }
+    thead th { position: sticky; top: 0; background: var(--panel); }
   </style>
+  <script>
+    // Polled boxes send the version they show; the server replies 204 (no swap) when nothing changed.
+    function ver(id) { const m = document.querySelector('#' + id + ' [data-v]'); return m ? m.dataset.v : ''; }
+    // Keep scroll position across refreshes; the transcript follows new lines only if you're at the bottom.
+    document.addEventListener('htmx:beforeSwap', e => {
+      const s = e.detail.target.closest('.keep-scroll');
+      if (s) s._atBottom = s.scrollHeight - s.scrollTop - s.clientHeight < 40;
+    });
+    document.addEventListener('htmx:afterSwap', e => {
+      const s = e.detail.target.closest('.keep-scroll');
+      if (s && s.dataset.follow && s._atBottom) s.scrollTop = s.scrollHeight;
+    });
+    document.addEventListener('DOMContentLoaded', () => {
+      const s = document.getElementById('run-scroll'); if (s) s.scrollTop = s.scrollHeight;
+    });
+  </script>
 </head>
 <body>
 <header>
@@ -80,9 +98,13 @@
           <span class="muted small">Every money movement is checked by policy.yaml before it executes.</span></div>
       </form>
     </section>
-    <section class="panel" id="run-panel"
-      {% if current %}hx-get="/partials/run/{{ current.id }}" hx-trigger="every 1.5s" hx-swap="innerHTML"{% endif %}>
-      {% include "partials/run.html" %}
+    <section class="panel">
+      <div class="transcript keep-scroll" id="run-scroll" data-follow="1">
+        <div id="run-body" {% if current %}hx-get="/partials/run/{{ current.id }}" hx-trigger="every 1.5s"
+             hx-swap="innerHTML" hx-vals='js:{v: ver("run-body")}'{% endif %}>
+          {% include "partials/run.html" %}
+        </div>
+      </div>
     </section>
     <section class="panel">
       <h2>Runs</h2>
@@ -113,8 +135,11 @@
   <section class="panel" style="grid-column: 1 / -1">
     <h2>Audit log {% if current %}<span class="muted">· <a href="/audit.csv?run_id={{ current.id }}">CSV for this run</a></span>{% endif %}
       <span class="muted">· <a href="/audit.csv">CSV (all)</a></span></h2>
-    <div hx-get="/partials/audit{% if current %}?run_id={{ current.id }}{% endif %}" hx-trigger="load, every 2s" hx-swap="innerHTML">
-      <span class="muted">loading…</span>
+    <div class="scroll keep-scroll">
+      <div id="audit-body" hx-get="/partials/audit{% if current %}?run_id={{ current.id }}{% endif %}"
+           hx-trigger="load, every 2s" hx-swap="innerHTML" hx-vals='js:{v: ver("audit-body")}'>
+        <span class="muted">loading…</span>
+      </div>
     </div>
   </section>
 </main>

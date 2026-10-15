@@ -1,9 +1,9 @@
+<span hidden data-v="{{ v }}"></span>
 <div class="small" style="margin-bottom:6px">
   {% if chain_ok %}<span class="pill ALLOW">hash chain intact · {{ chain_n }} rows</span>
   {% else %}<span class="pill DENY">hash chain BROKEN at row {{ chain_bad }}</span>{% endif %}
   {% if run_id %}<span class="muted">showing run {{ run_id }} · <a href="/">all runs</a></span>{% endif %}
 </div>
-<div class="scroll">
 <table>
   <thead><tr><th>#</th><th>time</th><th>run</th><th>actor</th><th>event</th><th>tool</th><th>decision</th>
     <th>amount</th><th>payee</th><th>rules / detail</th><th>rationale</th><th>stripe</th><th>policy</th></tr></thead>
@@ -29,4 +29,3 @@
   {% endfor %}
   </tbody>
 </table>
-</div>
