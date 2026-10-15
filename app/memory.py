@@ -14,6 +14,7 @@ from . import clauses, cognee_store
 
 _lock = threading.Lock()
 _decisions: list[dict] = []   # keyword fallback store (in-memory, per server run)
+FEED: list[dict] = []         # recent memory writes, shown live in the dashboard's policy box
 
 
 def _keyword_clauses(question: str, k: int = 5) -> list[str]:
@@ -42,14 +43,23 @@ def consult(question: str) -> dict:
             "clauses": ids, "source": "keyword" + note}
 
 
-def remember(text: str, kind: str = "decision", **meta) -> None:
+def remember(text: str, kind: str = "decision", summary: str = "", **meta) -> None:
+    entry = {"id": len(FEED) + 1, "ts": datetime.now(timezone.utc).isoformat(), "summary": summary or text[:120],
+             "state": "local"}
     with _lock:
-        _decisions.append({"ts": datetime.now(timezone.utc).isoformat(), "kind": kind, "text": text, **meta})
+        _decisions.append({"ts": entry["ts"], "kind": kind, "text": text, **meta})
+        FEED.append(entry)
     if cognee_store.ready():
         try:
-            cognee_store.remember_decision(text)
+            entry["state"] = "saving"
+            cognee_store.remember_decision(text, on_done=lambda ok: entry.update(state="stored" if ok else "local"))
         except Exception:
-            pass  # keyword copy above is kept either way
+            entry["state"] = "local"  # keyword copy above is kept either way
+
+
+def feed(n: int = 4) -> list[dict]:
+    with _lock:
+        return list(reversed(FEED[-n:]))
 
 
 def _keyword_recall(query: str, k: int = 5) -> list[str]:

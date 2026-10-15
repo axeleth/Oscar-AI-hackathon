@@ -253,9 +253,24 @@ def _remember(run: "Run", outcome: str, tool: str, args: dict, money: Money | No
         parts.append(extra)
     parts.append(f"run {run.id}")
     try:
-        memory.remember(" · ".join(parts), kind="decision", run_id=run.id, payee=m.payee, outcome=outcome)
+        memory.remember(" · ".join(parts), kind="decision", summary=_summary(outcome, tool, m, who),
+                        run_id=run.id, payee=m.payee, outcome=outcome)
     except Exception as e:  # memory must never break the money path
         run.note("system", f"memory write failed: {e}")
+
+
+def _summary(outcome: str, tool: str, m: Money, who: str) -> str:
+    """Short human line for the dashboard's memory feed, e.g. 'Approved by Axel: Refund £255.00 → Globex'."""
+    from .audit_view import LABELS
+    verb = {"EXECUTED": "Done", "BLOCKED": "Blocked", "APPROVED": "Approved", "REJECTED": "Rejected",
+            "APPROVAL": "Undone"}.get(outcome.split(" ")[0], outcome.title())
+    if "OVERRIDE" in outcome:
+        verb += " (override)"
+    by = f" by {who}" if who and who != "policy:auto" else ""
+    what = LABELS.get(tool, tool.replace("_", " ").capitalize())
+    if m.amount is not None:
+        what += f" {policy.fmt_money(m.amount, m.currency)} → {m.payee_label or m.payee}"
+    return f"{verb}{by}: {what}"
 
 
 def _amount_matches(typed: str, amount: int) -> bool:

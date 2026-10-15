@@ -172,10 +172,17 @@ def recall(query: str, timeout: float = 60) -> str:
                                       datasets=[DECISIONS_DATASET], system_prompt=PRECEDENT_PROMPT), timeout))
 
 
-def remember_decision(text: str):
+def remember_decision(text: str, on_done=None):
     async def write():
-        await _cognee.remember(text, dataset_name=DECISIONS_DATASET, node_set=["decisions"], self_improvement=False)
-        STATUS["decisions_stored"] += 1
+        try:
+            await _cognee.remember(text, dataset_name=DECISIONS_DATASET, node_set=["decisions"],
+                                   self_improvement=False)
+            STATUS["decisions_stored"] += 1
+            ok = True
+        except Exception:
+            ok = False
+        if on_done:
+            on_done(ok)
     _submit(write())
 
 

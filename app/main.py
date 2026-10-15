@@ -204,6 +204,21 @@ def policy_graph(which: str):
     return HTMLResponse(pathlib.Path(path).read_text())
 
 
+@app.get("/partials/memory-feed", response_class=HTMLResponse)
+def memory_feed(v: str = ""):
+    from html import escape
+    items = memory.feed()
+    version = "|".join(f"{i['id']}:{i['state']}" for i in items) or "empty"
+    if v == version:
+        return Response(status_code=204)
+    label = {"saving": "saving…", "stored": "✓ in Cognee", "local": "kept locally"}
+    rows = "".join(
+        f'<li data-id="{i["id"]}"><span class="mf-text">{escape(i["summary"])}</span>'
+        f'<span class="mf-state {i["state"]}">{label[i["state"]]}</span></li>' for i in items)
+    body = f'<ul class="mfeed">{rows}</ul>' if rows else '<div class="muted small">Nothing remembered yet.</div>'
+    return HTMLResponse(f'<span hidden data-v="{escape(version)}"></span>{body}')
+
+
 @app.get("/api/memory")
 def memory_status():
     return memory.status()

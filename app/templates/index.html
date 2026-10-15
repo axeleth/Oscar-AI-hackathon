@@ -140,6 +140,18 @@
     .rules li::before { content: ""; position: absolute; left: 0; top: .6em; width: 6px; height: 6px; border-radius: 50%;
                         background: var(--accent); }
     .rules .cl { color: var(--muted); font-size: 11px; white-space: nowrap; }
+    .mf-head { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 12px; font-weight: 600; }
+    .mfeed { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 6px; }
+    .mfeed li { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; font-size: 12px;
+                padding: 6px 8px; border-radius: 8px; background: var(--code); }
+    .mfeed .mf-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mfeed .mf-state { flex: none; font-size: 11px; color: var(--muted); }
+    .mfeed .mf-state.stored { color: var(--allow); font-weight: 600; } .mfeed .mf-state.saving { color: var(--accent-dark); }
+    .mfeed li.flash { animation: mflash 2.4s ease-out; }
+    @keyframes mflash { 0% { background: var(--accent); color: #fff; transform: translateX(-4px); }
+                        25% { background: var(--accent-soft); color: inherit; transform: none; } 100% { background: var(--code); } }
+    .panel.glow { animation: pglow 2.4s ease-out; }
+    @keyframes pglow { 0% { box-shadow: 0 0 0 3px var(--accent), var(--shadow); } 100% { box-shadow: var(--shadow); } }
     .htmx-indicator { display: none; } .htmx-request .htmx-indicator, .htmx-request.htmx-indicator { display: inline; }
     @media (max-width: 700px) { .audit summary { grid-template-columns: 56px minmax(0, 1fr) auto; }
       .audit summary > :nth-child(2), .audit summary > :nth-child(5) { display: none; } }
@@ -186,6 +198,17 @@
       if (e.target.closest('.term .pop')) return;
       document.querySelectorAll('.term.locked').forEach(t => t.classList.remove('locked'));
       if (document.activeElement && document.activeElement.classList.contains('term')) document.activeElement.blur();
+    });
+    // Policy box: flash newly remembered decisions and make the whole box glow briefly.
+    const seenMemory = new Set(); let memoryPrimed = false;
+    document.addEventListener('htmx:afterSwap', e => {
+      if (e.detail.target.id !== 'memory-feed') return;
+      let fresh = false;
+      e.detail.target.querySelectorAll('li[data-id]').forEach(li => {
+        if (!seenMemory.has(li.dataset.id)) { seenMemory.add(li.dataset.id); if (memoryPrimed) { li.classList.add('flash'); fresh = true; } }
+      });
+      memoryPrimed = true;
+      if (fresh) { const panel = e.detail.target.closest('.panel'); panel.classList.remove('glow'); void panel.offsetWidth; panel.classList.add('glow'); }
     });
     // Undo-window countdowns on approval cards.
     setInterval(() => document.querySelectorAll('[data-execute-at]').forEach(el => {
@@ -255,6 +278,9 @@
         <li>Only approved customers; {% if policy.payees.unknown_payee == "deny" %}anyone else is <b>refused</b>
             {%- else %}anyone else <b>needs you</b>{% endif %}. <span class="cl">§3.1–3.2</span></li>
       </ul>
+      <div class="mf-head">Oscar's memory <span class="muted">· latest decisions saved to Cognee</span></div>
+      <div id="memory-feed" hx-get="/partials/memory-feed" hx-trigger="load, every 2s" hx-swap="innerHTML"
+           hx-vals='js:{v: ver("memory-feed")}'></div>
       <div class="small" style="margin-top:10px"><a href="/policy" target="_blank">View full policy</a> ·
         <a href="/policy?tab=graph" target="_blank">Cognee memory graph</a></div>
     </section>
