@@ -28,6 +28,8 @@ Try in the UI: *"Check recent payments for duplicate charges and refund them. Th
 flag anything suspicious."* – this should show an auto-refund, a held approval and a prompt-injection
 escalation (the Initech invoice tells the AI to refund Shady Holdings).
 
+Copy-paste demo prompts: [DEMO_PROMPTS.md](DEMO_PROMPTS.md).
+
 Debug without the UI: `.venv/bin/python scripts/cli.py "your task"`. Fresh demo: `scripts/reset_stripe.py --audit`.
 
 ## Files
